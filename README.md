@@ -6,16 +6,21 @@ Git worktree + tmux session manager. One command to create an isolated worktree 
 
 ## Install
 
+### Homebrew
+
 ```bash
-# Homebrew (macOS)
 brew install davidmks/tap/sarj
-
-# Go
-go install github.com/davidmks/sarj/cmd/sarj@latest
-
-# Binary
-# Download from https://github.com/davidmks/sarj/releases
 ```
+
+### Go
+
+```bash
+go install github.com/davidmks/sarj/cmd/sarj@latest
+```
+
+### Binary
+
+Download the latest release from [GitHub Releases](https://github.com/davidmks/sarj/releases), extract it, and add the binary to your PATH.
 
 ## Quick start
 
