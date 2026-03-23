@@ -6,9 +6,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Execute builds the root command and runs it.
-// This is the single entry point called from main.go.
-func Execute(version string) error {
+// NewRootCmd builds the root cobra command with all subcommands registered.
+func NewRootCmd(version string, r exec.Runner) *cobra.Command {
 	root := &cobra.Command{
 		Use:     "sarj",
 		Short:   "Git worktree + tmux session manager",
@@ -18,13 +17,18 @@ func Execute(version string) error {
 		SilenceUsage: true,
 	}
 
-	r := &exec.DefaultRunner{}
-
 	root.AddCommand(
 		newCreateCmd(r),
 		newDeleteCmd(r),
 		newListCmd(r),
+		newInitCmd(r),
 	)
 
-	return root.Execute()
+	return root
+}
+
+// Execute builds the root command and runs it.
+// This is the single entry point called from main.go.
+func Execute(version string) error {
+	return NewRootCmd(version, &exec.DefaultRunner{}).Execute()
 }
