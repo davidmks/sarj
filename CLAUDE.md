@@ -12,6 +12,15 @@ make test-int       # go test -tags integration ./...
 make lint           # golangci-lint run (v2 config format)
 make fmt            # gofumpt -w .
 
+## Go Conventions
+- Exported symbols get doc comments starting with the symbol name
+- Each package gets a `// Package foo ...` comment
+
+## Testing
+- Table-driven tests (`tt` loop with `t.Run`) for same-behavior-different-inputs
+- Separate `func TestFoo` functions when setup or assertions diverge per case
+- If the table struct needs `setup func()` or `verify func()` fields, break it into separate tests
+
 ## Workflow
 - Build incrementally — one package/feature at a time, verify before moving on
 - Commit atomically — one logical change per commit, but stay pragmatic (don't over-split trivially related changes)
