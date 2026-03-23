@@ -39,7 +39,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Created worktree %s at %s\n", wt.Branch, wt.Path)
+			fmt.Fprintf(cmd.OutOrStdout(), "Created worktree %s at %s\n", wt.Branch, wt.Path) //nolint:errcheck
 			return nil
 		},
 	}

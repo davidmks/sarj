@@ -73,7 +73,7 @@ func TestCreate_NewBranch(t *testing.T) {
 
 	// Pre-create the worktree dir to simulate git worktree add
 	wtPath := filepath.Join(wtBase, "my-feature")
-	require.NoError(t, os.MkdirAll(wtPath, 0o755))
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
 
 	// Remove it so the existence check passes, then re-create via a custom response
 	require.NoError(t, os.RemoveAll(wtPath))
@@ -112,7 +112,7 @@ func TestCreate_GeneratesName(t *testing.T) {
 
 func TestCreate_ExistingDir(t *testing.T) {
 	wtBase := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(wtBase, "existing"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(wtBase, "existing"), 0o750))
 
 	cfg := &config.Config{WorktreeBase: wtBase}
 

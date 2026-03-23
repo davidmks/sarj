@@ -16,3 +16,10 @@ linters:
   exclusions:
     presets:
       - common-false-positives
+    rules:
+      # math/rand is fine for non-security name generation
+      - linters: [gosec]
+        text: "G404"
+      # best-effort cleanup — errcheck already covers intentional ignores
+      - linters: [gosec]
+        text: "G104"

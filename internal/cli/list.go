@@ -22,11 +22,11 @@ func newListCmd(r exec.Runner) *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tBRANCH\tPATH")
+			fmt.Fprintln(w, "NAME\tBRANCH\tPATH") //nolint:errcheck
 
 			for _, wt := range wts {
 				name := filepath.Base(wt.Path)
-				fmt.Fprintf(w, "%s\t%s\t%s\n", name, wt.Branch, wt.Path)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", name, wt.Branch, wt.Path) //nolint:errcheck
 			}
 
 			return w.Flush()

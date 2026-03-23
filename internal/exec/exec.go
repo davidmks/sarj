@@ -25,6 +25,7 @@ type DefaultRunner struct {
 	Dir string
 }
 
+// Run executes a command and returns its trimmed output.
 func (r *DefaultRunner) Run(name string, args ...string) (string, error) {
 	cmd := osexec.Command(name, args...)
 	if r.Dir != "" {
@@ -41,6 +42,7 @@ func (r *DefaultRunner) Run(name string, args ...string) (string, error) {
 	return result, nil
 }
 
+// RunInteractive runs a command connected to the terminal's stdin/stdout/stderr.
 func (r *DefaultRunner) RunInteractive(name string, args ...string) error {
 	cmd := osexec.Command(name, args...)
 	if r.Dir != "" {

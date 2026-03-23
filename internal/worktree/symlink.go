@@ -19,12 +19,12 @@ func CreateSymlinks(mainRepo, wtPath string, links []string) error {
 		}
 
 		// Ensure parent directory exists (for paths like .claude/settings.local.json)
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 			return fmt.Errorf("creating parent dir for symlink %s: %w", link, err)
 		}
 
 		// Remove existing file/symlink at destination so ln -sf semantics work
-		os.Remove(dst)
+		os.Remove(dst) //nolint:errcheck
 
 		if err := os.Symlink(src, dst); err != nil {
 			return fmt.Errorf("symlinking %s: %w", link, err)

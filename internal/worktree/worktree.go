@@ -56,7 +56,7 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 		return nil, fmt.Errorf("%w: %s", ErrWorktreeExists, wtPath)
 	}
 
-	if err := os.MkdirAll(cfg.WorktreeBase, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.WorktreeBase, 0o750); err != nil {
 		return nil, fmt.Errorf("creating worktree base dir: %w", err)
 	}
 
@@ -64,24 +64,17 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 		fmt.Fprintf(os.Stderr, "warning: fetch failed, continuing with local state: %v\n", err)
 	}
 
-	branchCreated := false
+	branchCreated, err := addWorktree(r, wtPath, opts.Name, opts.Base)
+	if err != nil {
+		return nil, err
+	}
+
 	success := false
 	defer func() {
 		if !success {
 			rollback(r, wtPath, opts.Name, branchCreated)
 		}
 	}()
-
-	if git.BranchExists(r, opts.Name) {
-		if _, err := r.Run("git", "worktree", "add", wtPath, opts.Name); err != nil {
-			return nil, fmt.Errorf("adding worktree for existing branch: %w", err)
-		}
-	} else {
-		if _, err := r.Run("git", "worktree", "add", "-b", opts.Name, wtPath, opts.Base); err != nil {
-			return nil, fmt.Errorf("adding worktree with new branch: %w", err)
-		}
-		branchCreated = true
-	}
 
 	if !opts.SkipSymlinks && len(cfg.Symlinks) > 0 {
 		mainRepo, err := git.MainWorktree(r)
@@ -127,6 +120,22 @@ func Delete(r exec.Runner, cfg *config.Config, opts DeleteOpts) error {
 	}
 
 	return nil
+}
+
+// addWorktree creates the git worktree, reusing an existing branch or creating a new one.
+// Returns whether a new branch was created (for rollback decisions).
+func addWorktree(r exec.Runner, wtPath, name, base string) (bool, error) {
+	if git.BranchExists(r, name) {
+		if _, err := r.Run("git", "worktree", "add", wtPath, name); err != nil {
+			return false, fmt.Errorf("adding worktree for existing branch: %w", err)
+		}
+		return false, nil
+	}
+
+	if _, err := r.Run("git", "worktree", "add", "-b", name, wtPath, base); err != nil {
+		return false, fmt.Errorf("adding worktree with new branch: %w", err)
+	}
+	return true, nil
 }
 
 func rollback(r exec.Runner, wtPath, branch string, branchCreated bool) {

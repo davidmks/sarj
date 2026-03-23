@@ -36,7 +36,7 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s\n", opts.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s\n", opts.Name) //nolint:errcheck
 			return nil
 		},
 	}

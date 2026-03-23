@@ -15,7 +15,7 @@ func TestCreateSymlinks(t *testing.T) {
 		mainRepo := t.TempDir()
 		wtPath := t.TempDir()
 
-		require.NoError(t, os.WriteFile(filepath.Join(mainRepo, ".env"), []byte("SECRET=x"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(mainRepo, ".env"), []byte("SECRET=x"), 0o600))
 
 		err := worktree.CreateSymlinks(mainRepo, wtPath, []string{".env"})
 
@@ -41,8 +41,8 @@ func TestCreateSymlinks(t *testing.T) {
 		wtPath := t.TempDir()
 
 		nested := filepath.Join(mainRepo, ".claude")
-		require.NoError(t, os.MkdirAll(nested, 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(nested, "settings.local.json"), []byte("{}"), 0o644))
+		require.NoError(t, os.MkdirAll(nested, 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(nested, "settings.local.json"), []byte("{}"), 0o600))
 
 		err := worktree.CreateSymlinks(mainRepo, wtPath, []string{".claude/settings.local.json"})
 
@@ -56,7 +56,7 @@ func TestCreateSymlinks(t *testing.T) {
 		mainRepo := t.TempDir()
 		wtPath := t.TempDir()
 
-		require.NoError(t, os.MkdirAll(filepath.Join(mainRepo, "ssl"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(mainRepo, "ssl"), 0o750))
 
 		err := worktree.CreateSymlinks(mainRepo, wtPath, []string{"ssl"})
 
@@ -70,8 +70,8 @@ func TestCreateSymlinks(t *testing.T) {
 		mainRepo := t.TempDir()
 		wtPath := t.TempDir()
 
-		require.NoError(t, os.WriteFile(filepath.Join(mainRepo, ".env"), []byte("real"), 0o644))
-		require.NoError(t, os.WriteFile(filepath.Join(wtPath, ".env"), []byte("old"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(mainRepo, ".env"), []byte("real"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(wtPath, ".env"), []byte("old"), 0o600))
 
 		err := worktree.CreateSymlinks(mainRepo, wtPath, []string{".env"})
 
