@@ -25,3 +25,4 @@ make fmt            # gofumpt -w .
 - Build incrementally — one package/feature at a time, verify before moving on
 - Commit atomically — one logical change per commit, but stay pragmatic (don't over-split trivially related changes)
 - The gist is the spec — if implementation diverges from the gist behavior, the gist wins
+- The plan is a guide, not gospel — flag improvements or issues rather than following it blindly

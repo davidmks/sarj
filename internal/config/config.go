@@ -1,0 +1,139 @@
+// Package config handles loading and merging global and per-project TOML configuration.
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/pelletier/go-toml/v2"
+)
+
+// Config holds the merged configuration from global and per-project sources.
+type Config struct {
+	WorktreeBase  string `toml:"worktree_base"`
+	DefaultBranch string `toml:"default_branch"`
+	AutoAttach    bool   `toml:"auto_attach"`
+
+	Tmux TmuxConfig `toml:"tmux"`
+
+	// Per-project only fields
+	SetupCommand string   `toml:"setup_command"`
+	Symlinks     []string `toml:"symlinks"`
+}
+
+// TmuxConfig holds tmux-related settings.
+type TmuxConfig struct {
+	Enabled bool           `toml:"enabled"`
+	Windows []WindowConfig `toml:"windows"`
+}
+
+// WindowConfig describes a single tmux window to create.
+type WindowConfig struct {
+	Name    string            `toml:"name"`
+	Command string            `toml:"command"`
+	EnvFile string            `toml:"env_file"`
+	Env     map[string]string `toml:"env"`
+	Panes   []PaneConfig      `toml:"panes"`
+}
+
+// PaneConfig describes a split within a tmux window.
+// Panes inherit env/env_file from their parent window.
+type PaneConfig struct {
+	Command string `toml:"command"`
+	Split   string `toml:"split"` // "horizontal" or "vertical" (default: vertical)
+	Size    int    `toml:"size"`  // percentage (default: 50)
+}
+
+// Defaults returns a Config with sensible zero-config defaults.
+func Defaults(repoName string) Config {
+	return Config{
+		WorktreeBase:  "~/wt/" + repoName,
+		DefaultBranch: "main",
+		AutoAttach:    true,
+		Tmux: TmuxConfig{
+			Enabled: true,
+			Windows: []WindowConfig{
+				{Name: "terminal"},
+			},
+		},
+	}
+}
+
+// GlobalPath returns the default global config file path.
+func GlobalPath() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "sarj", "config.toml")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "sarj", "config.toml")
+}
+
+// ProjectPath returns the per-project config file path for a given repo root.
+func ProjectPath(repoRoot string) string {
+	return filepath.Join(repoRoot, ".sarj.toml")
+}
+
+// Load reads global and per-project configs, merges them, and applies defaults.
+// repoRoot is the git repository root; repoName is used for template expansion.
+func Load(repoRoot, repoName string) (*Config, error) {
+	return LoadWithPaths(GlobalPath(), ProjectPath(repoRoot), repoName)
+}
+
+// LoadWithPaths is like Load but accepts explicit file paths (for testing).
+func LoadWithPaths(globalPath, projectPath, repoName string) (*Config, error) {
+	cfg := Defaults(repoName)
+
+	if err := loadFile(globalPath, &cfg); err != nil {
+		return nil, fmt.Errorf("loading global config: %w", err)
+	}
+
+	var proj Config
+	if err := loadFile(projectPath, &proj); err != nil {
+		return nil, fmt.Errorf("loading project config: %w", err)
+	}
+
+	merge(&cfg, &proj)
+
+	cfg.WorktreeBase = expandPath(cfg.WorktreeBase, repoName)
+
+	return &cfg, nil
+}
+
+// loadFile reads a TOML file into dst. Returns nil if the file doesn't exist.
+func loadFile(path string, dst any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	return toml.Unmarshal(data, dst)
+}
+
+// merge overlays per-project fields onto the global config.
+// Per-project wins for: default_branch, setup_command, symlinks.
+// Global wins for: tmux (personal preference).
+func merge(global, project *Config) {
+	if project.DefaultBranch != "" {
+		global.DefaultBranch = project.DefaultBranch
+	}
+	if project.SetupCommand != "" {
+		global.SetupCommand = project.SetupCommand
+	}
+	if len(project.Symlinks) > 0 {
+		global.Symlinks = project.Symlinks
+	}
+}
+
+// expandPath replaces ~ with $HOME and {{.RepoName}} with the repo name.
+func expandPath(path, repoName string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, path[2:])
+	}
+	return strings.ReplaceAll(path, "{{.RepoName}}", repoName)
+}
