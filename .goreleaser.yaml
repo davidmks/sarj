@@ -1,0 +1,39 @@
+version: 2
+
+builds:
+  - main: ./cmd/sarj
+    binary: sarj
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - formats:
+      - tar.gz
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+      - "^test:"
+
+homebrew_casks:
+  - repository:
+      owner: davidmks
+      name: homebrew-tap
+    homepage: https://github.com/davidmks/sarj
+    description: Git worktree + tmux session manager
+    license: MIT
