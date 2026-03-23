@@ -52,5 +52,7 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.KeepBranch, "keep-branch", false, "keep the branch (no prompt)")
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "skip confirmation")
 
+	cmd.ValidArgsFunction = completeWorktreeNames(r)
+
 	return cmd
 }
