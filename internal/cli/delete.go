@@ -2,11 +2,13 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/davidmks/sarj/internal/config"
 	"github.com/davidmks/sarj/internal/exec"
 	"github.com/davidmks/sarj/internal/git"
+	"github.com/davidmks/sarj/internal/tmux"
 	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +32,11 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 			cfg, err := config.Load(repoRoot, repoName)
 			if err != nil {
 				return err
+			}
+
+			sessionName := tmux.SanitizeName(opts.Name)
+			if err := tmux.KillSession(r, sessionName); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not kill tmux session %s: %v\n", sessionName, err)
 			}
 
 			if err := worktree.Delete(r, cfg, opts); err != nil {
