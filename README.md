@@ -1,0 +1,176 @@
+# sarj
+
+**/ˈʃɒrʲ/ — Hungarian for shoot, sprout, new growth from a living tree. Also: offspring, descendant.**
+
+Manage git worktrees with optional tmux sessions. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session — one command to tear it all down.
+
+tmux is optional — sarj works as a standalone worktree manager too.
+
+## Install
+
+```bash
+# Homebrew (macOS)
+brew install davidmks/tap/sarj
+
+# Go
+go install github.com/davidmks/sarj/cmd/sarj@latest
+
+# Binary
+# Download from https://github.com/davidmks/sarj/releases
+```
+
+## Quick start
+
+```bash
+# Create a worktree with a tmux session
+sarj create feat/my-feature
+
+# Create with auto-generated name
+sarj create
+
+# Create from a specific base branch
+sarj create feat/v2 -b feat/v1
+
+# List worktrees and their tmux session status
+sarj list
+
+# Delete a worktree (kills tmux session, removes worktree)
+sarj delete feat-my-feature
+
+# Delete and also remove the branch
+sarj delete feat-my-feature -D
+```
+
+## How it works
+
+```
+sarj create feat/my-feature
+  │
+  ├─ git fetch origin
+  ├─ git worktree add -b feat/my-feature ~/wt/repo/feat-my-feature main
+  ├─ symlink .env, secrets, etc. from main worktree
+  ├─ run setup command (rollback on failure)
+  └─ create tmux session with configured windows/panes
+       └─ attach or switch-client
+
+sarj delete feat-my-feature
+  │
+  ├─ tmux kill-session
+  ├─ git worktree remove --force
+  ├─ optionally delete the branch
+  └─ git worktree prune
+```
+
+## Configuration
+
+sarj works with zero configuration. To customize, use `sarj init`:
+
+```bash
+# Per-project config (commit to repo)
+sarj init
+
+# Global config (personal preferences)
+sarj init --global
+```
+
+### Global: `~/.config/sarj/config.toml`
+
+Personal preferences — worktree location, tmux windows, auto-attach behavior.
+
+```toml
+worktree_base = "~/wt/{{.RepoName}}"
+default_branch = "main"
+auto_attach = true
+
+[tmux]
+enabled = true
+
+[[tmux.windows]]
+name = "terminal"
+command = ""
+
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+env_file = ".env.test"
+
+[[tmux.windows]]
+name = "script"
+command = ""
+env = { UV_ENV_FILE = ".env" }
+```
+
+Windows can have panes for side-by-side layouts:
+
+```toml
+[[tmux.windows]]
+name = "dev"
+
+[[tmux.windows.panes]]
+command = "make dev"
+size = 70
+
+[[tmux.windows.panes]]
+command = "make test-watch"
+split = "horizontal"
+```
+
+### Per-project: `.sarj.toml`
+
+Team-shared settings — setup command, symlinks, default branch.
+
+```toml
+default_branch = "trunk"
+setup_command = "make setup"
+
+symlinks = [
+    ".env",
+    ".env.secrets",
+    "ssl",
+    ".claude/settings.local.json",
+]
+```
+
+### Merge strategy
+
+| Field | Source |
+|-------|--------|
+| `worktree_base`, `auto_attach`, `tmux.windows` | Global (personal) |
+| `setup_command`, `symlinks` | Per-project (team) |
+| `default_branch` | Per-project wins if set, otherwise global |
+
+## Commands
+
+### `sarj create [name] [flags]`
+
+Create a worktree with optional tmux session.
+
+| Flag | Description |
+|------|-------------|
+| `-b, --base <branch>` | Base branch (default: auto-detect) |
+| `--no-setup` | Skip setup command |
+| `--no-symlinks` | Skip symlinking |
+| `--no-tmux` | Skip tmux session |
+| `--no-attach` | Create session but don't attach |
+
+### `sarj delete <name> [flags]`
+
+Remove a worktree and kill its tmux session.
+
+| Flag | Description |
+|------|-------------|
+| `-D, --delete-branch` | Also delete the branch |
+| `--keep-branch` | Keep the branch (no prompt) |
+| `--force` | Skip confirmation |
+
+### `sarj list`
+
+List worktrees with branch, path, and tmux session status.
+
+### `sarj init [--global]`
+
+Generate a config file with commented defaults.
+
+## License
+
+MIT
