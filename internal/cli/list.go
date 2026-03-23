@@ -28,8 +28,13 @@ func newListCmd(r exec.Runner) *cobra.Command {
 				sessionSet[s] = true
 			}
 
+			// Skip the main worktree (always the first entry)
+			if len(wts) > 0 {
+				wts = wts[1:]
+			}
+
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tBRANCH\tPATH\tTMUX") //nolint:errcheck
+			fmt.Fprintln(w, "NAME\tBRANCH\tTMUX") //nolint:errcheck
 
 			for _, wt := range wts {
 				name := filepath.Base(wt.Path)
@@ -40,7 +45,7 @@ func newListCmd(r exec.Runner) *cobra.Command {
 					tmuxStatus = "active"
 				}
 
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, wt.Branch, wt.Path, tmuxStatus) //nolint:errcheck
+				fmt.Fprintf(w, "%s\t%s\t%s\n", name, wt.Branch, tmuxStatus) //nolint:errcheck
 			}
 
 			return w.Flush()
