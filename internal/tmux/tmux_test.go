@@ -148,9 +148,9 @@ func TestCreateSession_MultipleWindows(t *testing.T) {
 
 	assert.True(t, r.hasCall("new-session -d -s my-session"))
 	assert.True(t, r.hasCall("new-window -t my-session -n editor"))
-	assert.True(t, r.hasCall("send-keys -t my-session:editor nvim . Enter"))
+	assert.True(t, r.hasCall("send-keys -t my-session:editor clear && nvim . Enter"))
 	assert.True(t, r.hasCall("new-window -t my-session -n claude"))
-	assert.True(t, r.hasCall("send-keys -t my-session:claude claude Enter"))
+	assert.True(t, r.hasCall("send-keys -t my-session:claude clear && claude Enter"))
 }
 
 func TestCreateSession_WithPanes(t *testing.T) {
@@ -169,9 +169,9 @@ func TestCreateSession_WithPanes(t *testing.T) {
 	err := tmux.CreateSession(r, "my-session", "/work/repo", windows)
 	require.NoError(t, err)
 
-	assert.True(t, r.hasCall("send-keys -t my-session:dev nvim . Enter"))
+	assert.True(t, r.hasCall("send-keys -t my-session:dev clear && nvim . Enter"))
 	assert.True(t, r.hasCall("split-window -h -t my-session:dev -c /work/repo -p 30"))
-	assert.True(t, r.hasCall("send-keys -t my-session:dev make watch Enter"))
+	assert.True(t, r.hasCall("send-keys -t my-session:dev clear && make watch Enter"))
 }
 
 func TestCreateSession_SanitizesName(t *testing.T) {
@@ -323,34 +323,34 @@ func TestBuildCommand(t *testing.T) {
 		{
 			name:    "command only",
 			command: "nvim .",
-			want:    "nvim .",
+			want:    "clear && nvim .",
 		},
 		{
 			name:    "env file only",
 			envFile: ".env.test",
-			want:    "set -a && source .env.test && set +a",
+			want:    "set -a && source .env.test && set +a && clear",
 		},
 		{
 			name:    "env vars only",
 			env:     map[string]string{"FOO": "bar"},
-			want:    "export FOO=bar",
+			want:    "export FOO=bar && clear",
 		},
 		{
 			name:    "all combined",
 			envFile: ".env.test",
 			env:     map[string]string{"UV_ENV_FILE": ".env"},
 			command: "nvim .",
-			want:    "set -a && source .env.test && set +a && export UV_ENV_FILE=.env && nvim .",
+			want:    "set -a && source .env.test && set +a && export UV_ENV_FILE=.env && clear && nvim .",
 		},
 		{
 			name:    "env vars sorted",
 			env:     map[string]string{"Z_VAR": "z", "A_VAR": "a"},
 			command: "bash",
-			want:    "export A_VAR=a Z_VAR=z && bash",
+			want:    "export A_VAR=a Z_VAR=z && clear && bash",
 		},
 		{
 			name: "empty",
-			want: "",
+			want: "clear",
 		},
 	}
 

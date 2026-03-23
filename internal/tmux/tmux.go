@@ -87,10 +87,6 @@ func sendWindowCommand(r exec.Runner, session string, w config.WindowConfig) err
 	}
 
 	full := BuildCommand(w.EnvFile, w.Env, cmd)
-	if full == "" {
-		return nil
-	}
-
 	target := session + ":" + w.Name
 	if _, err := r.Run("tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
 		return fmt.Errorf("sending command to window %s: %w", w.Name, err)
@@ -126,10 +122,6 @@ func createPanes(r exec.Runner, session string, w config.WindowConfig, path stri
 
 		// Panes inherit env/env_file from parent window
 		full := BuildCommand(w.EnvFile, w.Env, p.Command)
-		if full == "" {
-			continue
-		}
-
 		if _, err := r.Run("tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
 			return fmt.Errorf("sending command to pane in %s: %w", w.Name, err)
 		}
@@ -178,7 +170,10 @@ func ListSessions(r exec.Runner) ([]string, error) {
 
 // BuildCommand constructs the shell command string for a window or pane,
 // prepending env_file sourcing and env var exports.
-// Pattern: set -a && source <file> && set +a && export K=V && <command>
+// A clear is always inserted so the user sees a clean terminal:
+//   - With command: env setup && clear && command
+//   - Without command: env setup && clear
+//   - Nothing at all: clear
 func BuildCommand(envFile string, env map[string]string, command string) string {
 	var parts []string
 
@@ -199,6 +194,8 @@ func BuildCommand(envFile string, env map[string]string, command string) string 
 		}
 		parts = append(parts, "export "+strings.Join(exports, " "))
 	}
+
+	parts = append(parts, "clear")
 
 	if command != "" {
 		parts = append(parts, command)
