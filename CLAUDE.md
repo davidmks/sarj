@@ -20,6 +20,7 @@ make fmt            # gofumpt -w .
 - Table-driven tests (`tt` loop with `t.Run`) for same-behavior-different-inputs
 - Separate `func TestFoo` functions when setup or assertions diverge per case
 - If the table struct needs `setup func()` or `verify func()` fields, break it into separate tests
+- Integration tests (`//go:build integration`) are few and focused — test real component boundaries, not logic already covered by unit tests
 
 ## Workflow
 - Build incrementally — one package/feature at a time, verify before moving on
