@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/davidmks/sarj/internal/config"
 	"github.com/davidmks/sarj/internal/exec"
@@ -35,15 +37,30 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 			}
 
 			sessionName := tmux.SanitizeName(opts.Name)
+			fmt.Fprintf(os.Stderr, "Stopping tmux session...\n")
 			if err := tmux.KillSession(r, sessionName); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not kill tmux session %s: %v\n", sessionName, err)
+				fmt.Fprintf(os.Stderr, "warning: could not kill tmux session: %v\n", err)
 			}
 
+			fmt.Fprintf(os.Stderr, "Removing worktree...\n")
 			if err := worktree.Delete(r, cfg, opts); err != nil {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s\n", opts.Name) //nolint:errcheck
+			if !opts.DeleteBranch && !opts.KeepBranch {
+				opts.DeleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", opts.Name))
+			}
+
+			branchStatus := "branch kept"
+			if opts.DeleteBranch {
+				if _, err := r.Run("git", "branch", "-D", opts.Name); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not delete branch: %v\n", err)
+				} else {
+					branchStatus = "branch deleted"
+				}
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", opts.Name, branchStatus) //nolint:errcheck
 			return nil
 		},
 	}
@@ -55,4 +72,12 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 	cmd.ValidArgsFunction = completeWorktreeNames(r)
 
 	return cmd
+}
+
+// promptYesNo asks a y/N question on stderr and reads from stdin. Default is no.
+func promptYesNo(question string) bool {
+	fmt.Fprintf(os.Stderr, "%s (y/N) ", question)
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	return strings.TrimSpace(strings.ToLower(answer)) == "y"
 }

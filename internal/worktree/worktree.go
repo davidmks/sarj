@@ -104,19 +104,14 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}, nil
 }
 
-// Delete removes a worktree and optionally its branch.
+// Delete removes a worktree and prunes stale references.
+// Branch deletion is handled by the CLI layer (may require user prompt).
 func Delete(r exec.Runner, cfg *config.Config, opts DeleteOpts) error {
 	dirName := strings.ReplaceAll(opts.Name, "/", "-")
 	wtPath := filepath.Join(cfg.WorktreeBase, dirName)
 
 	if _, err := r.Run("git", "worktree", "remove", "--force", wtPath); err != nil {
 		return fmt.Errorf("removing worktree %s: %w", opts.Name, err)
-	}
-
-	if opts.DeleteBranch {
-		if _, err := r.Run("git", "branch", "-D", opts.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not delete branch %s: %v\n", opts.Name, err)
-		}
 	}
 
 	if _, err := r.Run("git", "worktree", "prune"); err != nil {

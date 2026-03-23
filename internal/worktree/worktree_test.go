@@ -126,18 +126,16 @@ func TestDelete(t *testing.T) {
 	r := &fakeRunner{
 		responses: map[string]response{
 			"git worktree": {},
-			"git branch":   {},
 		},
 	}
 
 	err := worktree.Delete(r, cfg, worktree.DeleteOpts{
-		Name:         "my-feature",
-		DeleteBranch: true,
+		Name: "my-feature",
 	})
 
 	require.NoError(t, err)
 	assert.True(t, r.hasCall("worktree remove"))
-	assert.True(t, r.hasCall("branch -D"))
+	assert.True(t, r.hasCall("worktree prune"))
 }
 
 func TestList(t *testing.T) {
