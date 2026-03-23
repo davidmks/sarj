@@ -60,10 +60,12 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 		return nil, fmt.Errorf("creating worktree base dir: %w", err)
 	}
 
+	fmt.Fprintf(os.Stderr, "Fetching origin...\n")
 	if err := git.Fetch(r, "origin"); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: fetch failed, continuing with local state: %v\n", err)
 	}
 
+	fmt.Fprintf(os.Stderr, "Creating worktree %s at %s\n", opts.Name, wtPath)
 	branchCreated, err := addWorktree(r, wtPath, opts.Name, opts.Base)
 	if err != nil {
 		return nil, err
@@ -77,6 +79,7 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}()
 
 	if !opts.SkipSymlinks && len(cfg.Symlinks) > 0 {
+		fmt.Fprintf(os.Stderr, "Symlinking %d files...\n", len(cfg.Symlinks))
 		mainRepo, err := git.MainWorktree(r)
 		if err != nil {
 			return nil, fmt.Errorf("finding main worktree for symlinks: %w", err)
@@ -87,8 +90,9 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}
 
 	if !opts.SkipSetup && cfg.SetupCommand != "" {
+		fmt.Fprintf(os.Stderr, "Running setup command...\n")
 		cmd := fmt.Sprintf("cd %q && %s", wtPath, cfg.SetupCommand)
-		if _, err := r.Run("sh", "-c", cmd); err != nil {
+		if err := r.RunInteractive("sh", "-c", cmd); err != nil {
 			return nil, fmt.Errorf("setup command failed: %w", err)
 		}
 	}
