@@ -2,9 +2,7 @@
 
 **/ˈʃɒrʲ/ — Hungarian for shoot, sprout, new growth from a living tree. Also: offspring, descendant.**
 
-Manage git worktrees with optional tmux sessions. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session — one command to tear it all down.
-
-tmux is optional — sarj works as a standalone worktree manager too.
+Git worktree + tmux session manager. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session — one command to tear it all down. tmux is optional.
 
 ## Install
 
@@ -43,23 +41,17 @@ sarj delete feat-my-feature -D
 
 ## How it works
 
-```
-sarj create feat/my-feature
-  │
-  ├─ git fetch origin
-  ├─ git worktree add -b feat/my-feature ~/wt/repo/feat-my-feature main
-  ├─ symlink .env, secrets, etc. from main worktree
-  ├─ run setup command (rollback on failure)
-  └─ create tmux session with configured windows/panes
-       └─ attach or switch-client
+**`sarj create`**
+- Fetch latest from remote
+- Create worktree and branch
+- Symlink shared files (`.env`, secrets, etc.)
+- Run setup command — rolls back everything on failure
+- Open tmux session with configured windows/panes
 
-sarj delete feat-my-feature
-  │
-  ├─ tmux kill-session
-  ├─ git worktree remove --force
-  ├─ optionally delete the branch
-  └─ git worktree prune
-```
+**`sarj delete`**
+- Kill tmux session
+- Remove worktree
+- Optionally delete the branch
 
 ## Configuration
 
@@ -130,14 +122,6 @@ symlinks = [
     ".claude/settings.local.json",
 ]
 ```
-
-### Merge strategy
-
-| Field | Source |
-|-------|--------|
-| `worktree_base`, `auto_attach`, `tmux.windows` | Global (personal) |
-| `setup_command`, `symlinks` | Per-project (team) |
-| `default_branch` | Per-project wins if set, otherwise global |
 
 ## Commands
 
