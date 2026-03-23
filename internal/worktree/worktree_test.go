@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/davidmks/sarj/internal/config"
@@ -13,9 +14,9 @@ import (
 )
 
 // fakeRunner records calls and returns preconfigured responses.
+// Matching tries the full command, then progressively shorter prefixes.
 type fakeRunner struct {
-	calls []string
-	// responses maps a command key ("git worktree add") to its output/error
+	calls     []string
 	responses map[string]response
 }
 
@@ -25,14 +26,15 @@ type response struct {
 }
 
 func (f *fakeRunner) Run(name string, args ...string) (string, error) {
-	key := name
-	if len(args) > 0 {
-		key = name + " " + args[0]
-	}
-	f.calls = append(f.calls, fmt.Sprintf("%s %s", name, joinArgs(args)))
+	call := name + " " + strings.Join(args, " ")
+	f.calls = append(f.calls, call)
 
-	if resp, ok := f.responses[key]; ok {
-		return resp.out, resp.err
+	parts := strings.Fields(call)
+	for i := len(parts); i > 0; i-- {
+		key := strings.Join(parts[:i], " ")
+		if resp, ok := f.responses[key]; ok {
+			return resp.out, resp.err
+		}
 	}
 	return "", nil
 }
@@ -41,15 +43,13 @@ func (f *fakeRunner) RunInteractive(_ string, _ ...string) error {
 	return nil
 }
 
-func joinArgs(args []string) string {
-	s := ""
-	for i, a := range args {
-		if i > 0 {
-			s += " "
+func (f *fakeRunner) hasCall(substr string) bool {
+	for _, c := range f.calls {
+		if strings.Contains(c, substr) {
+			return true
 		}
-		s += a
 	}
-	return s
+	return false
 }
 
 func TestCreate_NewBranch(t *testing.T) {
@@ -62,21 +62,13 @@ func TestCreate_NewBranch(t *testing.T) {
 
 	r := &fakeRunner{
 		responses: map[string]response{
-			// fetch succeeds
-			"git fetch": {},
-			// branch doesn't exist
+			"git fetch":    {},
 			"git show-ref": {err: fmt.Errorf("not found")},
-			// worktree add succeeds — we need to create the dir since Create checks os.Stat
 			"git worktree": {},
 		},
 	}
 
-	// Pre-create the worktree dir to simulate git worktree add
 	wtPath := filepath.Join(wtBase, "my-feature")
-	require.NoError(t, os.MkdirAll(wtPath, 0o750))
-
-	// Remove it so the existence check passes, then re-create via a custom response
-	require.NoError(t, os.RemoveAll(wtPath))
 
 	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
 		Name:      "my-feature",
@@ -144,8 +136,8 @@ func TestDelete(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	assert.Contains(t, r.calls[0], "worktree remove")
-	assert.Contains(t, r.calls[1], "branch -D")
+	assert.True(t, r.hasCall("worktree remove"))
+	assert.True(t, r.hasCall("branch -D"))
 }
 
 func TestList(t *testing.T) {

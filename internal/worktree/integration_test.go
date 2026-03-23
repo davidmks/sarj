@@ -49,7 +49,6 @@ func TestIntegration_CreateListDelete(t *testing.T) {
 		DefaultBranch: "main",
 	}
 
-	// Create
 	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
 		Name:      "test-branch",
 		SkipSetup: true,
@@ -58,12 +57,10 @@ func TestIntegration_CreateListDelete(t *testing.T) {
 	assert.Equal(t, "test-branch", wt.Branch)
 	assert.DirExists(t, wt.Path)
 
-	// List — should show main + test-branch
 	wts, err := worktree.List(r)
 	require.NoError(t, err)
 	assert.Len(t, wts, 2)
 
-	// Delete
 	err = worktree.Delete(r, cfg, worktree.DeleteOpts{
 		Name:         "test-branch",
 		DeleteBranch: true,
@@ -71,7 +68,6 @@ func TestIntegration_CreateListDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoDirExists(t, wt.Path)
 
-	// Only main remains
 	wts, err = worktree.List(r)
 	require.NoError(t, err)
 	assert.Len(t, wts, 1)
@@ -121,7 +117,6 @@ func TestIntegration_CreateExistingBranch(t *testing.T) {
 	_, err := r.Run("git", "branch", "existing-branch")
 	require.NoError(t, err)
 
-	// Create worktree for the existing branch — should reuse, not create new
 	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
 		Name:      "existing-branch",
 		SkipSetup: true,

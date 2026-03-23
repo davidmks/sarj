@@ -15,6 +15,10 @@ make fmt            # gofumpt -w .
 ## Go Conventions
 - Exported symbols get doc comments starting with the symbol name
 - Each package gets a `// Package foo ...` comment
+- Message casing:
+  - Errors (returned): lowercase, no period — `fmt.Errorf("creating session: %w", err)`
+  - Warnings (stderr): lowercase after prefix — `warning: could not kill session`
+  - Success messages (stdout): capitalized sentence — `Created worktree foo at /path`
 
 ## Testing
 - Table-driven tests (`tt` loop with `t.Run`) for same-behavior-different-inputs
