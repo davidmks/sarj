@@ -17,6 +17,11 @@ Git worktree + tmux session manager. One command to create an isolated worktree 
 brew install davidmks/tap/sarj
 ```
 
+> **macOS:** Apple may show a security warning because the binary is unsigned. To allow it:
+> ```
+> xattr -d com.apple.quarantine $(which sarj)
+> ```
+
 ### Go
 
 ```bash
