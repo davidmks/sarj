@@ -34,6 +34,7 @@ homebrew_casks:
   - repository:
       owner: davidmks
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/davidmks/sarj
     description: Git worktree + tmux session manager
     license: MIT
