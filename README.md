@@ -97,6 +97,8 @@ command = ""
 env = { UV_ENV_FILE = ".env" }
 ```
 
+**Environment variables**: Use `env_file` to source a file (all variables are exported) or `env` to set individual variables. Both can be combined — the file is sourced first, then individual vars are exported. Panes inherit environment from their parent window.
+
 Windows can have panes for side-by-side layouts:
 
 ```toml

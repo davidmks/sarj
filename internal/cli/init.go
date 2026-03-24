@@ -42,6 +42,11 @@ const globalConfigTemplate = `# sarj global configuration
 # command = ""
 # env = { UV_ENV_FILE = ".env" }
 #
+# # Environment variables: use env_file to source a file (all variables are
+# # exported) or env to set individual variables. Both can be combined — the
+# # file is sourced first, then individual vars are exported. Panes inherit
+# # environment from their parent window.
+#
 # # Windows can have panes for side-by-side layouts.
 # [[tmux.windows]]
 # name = "dev"
@@ -95,7 +100,10 @@ func newInitCmd(r exec.Runner) *cobra.Command {
 }
 
 func initGlobal(cmd *cobra.Command) error {
-	path := config.GlobalPath()
+	path, err := config.GlobalPath()
+	if err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("config already exists: %s", path)
