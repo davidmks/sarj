@@ -130,7 +130,7 @@ split = "horizontal"
 
 ### Per-project: `.sarj.toml`
 
-Team-shared settings — setup command, symlinks, default branch.
+Team-shared settings — setup command, symlinks, default branch, tmux windows.
 
 ```toml
 default_branch = "trunk"

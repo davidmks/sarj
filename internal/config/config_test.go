@@ -110,6 +110,27 @@ command = "claude"
 	assert.Equal(t, "claude", cfg.Tmux.Windows[1].Name)
 }
 
+func TestLoadWithPaths_ProjectOverridesTmuxWindows(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.global, `
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+`)
+	writeFile(t, p.project, `
+[[tmux.windows]]
+name = "dev"
+command = "make dev"
+`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.Len(t, cfg.Tmux.Windows, 1)
+	assert.Equal(t, "dev", cfg.Tmux.Windows[0].Name)
+}
+
 func TestLoadWithPaths_InvalidToml(t *testing.T) {
 	p := newTestPaths(t)
 

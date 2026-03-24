@@ -139,8 +139,7 @@ func loadFile(path string, dst any) error {
 }
 
 // merge overlays per-project fields onto the global config.
-// Per-project wins for: default_branch, setup_command, symlinks.
-// Global wins for: tmux (personal preference).
+// Per-project wins for: default_branch, setup_command, symlinks, tmux windows.
 func merge(global, project *Config) {
 	if project.DefaultBranch != "" {
 		global.DefaultBranch = project.DefaultBranch
@@ -150,6 +149,9 @@ func merge(global, project *Config) {
 	}
 	if len(project.Symlinks) > 0 {
 		global.Symlinks = project.Symlinks
+	}
+	if len(project.Tmux.Windows) > 0 {
+		global.Tmux.Windows = project.Tmux.Windows
 	}
 }
 

@@ -77,6 +77,11 @@ const projectConfigTemplate = `# sarj per-project configuration
 #     "ssl",
 #     ".claude/settings.local.json",
 # ]
+
+# Tmux windows for this project (overrides global windows).
+# [[tmux.windows]]
+# name = "dev"
+# command = "make dev"
 `
 
 const localConfigTemplate = `# sarj local configuration (per-user, per-project)
