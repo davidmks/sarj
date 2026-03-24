@@ -4,6 +4,11 @@
 
 Git worktree + tmux session manager. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session — one command to tear it all down. tmux is optional.
 
+## Requirements
+
+- **git** — sarj manages git worktrees
+- **tmux** (optional) — for session management. Without tmux, sarj works as a pure worktree manager.
+
 ## Install
 
 ### Homebrew
@@ -30,6 +35,7 @@ sarj create feat/my-feature
 
 # Create with auto-generated name
 sarj create
+# => Created worktree calm-spinning-oak
 
 # Create from a specific base branch
 sarj create feat/v2 -b feat/v1
@@ -38,10 +44,10 @@ sarj create feat/v2 -b feat/v1
 sarj list
 
 # Delete a worktree (kills tmux session, removes worktree)
-sarj delete feat-my-feature
+sarj delete feat/my-feature
 
 # Delete and also remove the branch
-sarj delete feat-my-feature -D
+sarj delete feat/my-feature -D
 ```
 
 ## How it works
@@ -72,7 +78,7 @@ sarj init --global
 
 ### Global: `~/.config/sarj/config.toml`
 
-Personal preferences — worktree location, tmux windows, auto-attach behavior.
+Personal preferences — worktree location, tmux windows, auto-attach behavior. `{{.RepoName}}` expands to the repository directory name.
 
 ```toml
 worktree_base = "~/wt/{{.RepoName}}"
@@ -130,6 +136,8 @@ symlinks = [
 ]
 ```
 
+When both configs exist, per-project wins for `default_branch`, `setup_command`, and `symlinks`. Tmux windows always come from the global config (they're personal preference).
+
 ## Commands
 
 ### `sarj create [name] [flags]`
@@ -150,17 +158,20 @@ Remove a worktree and kill its tmux session.
 
 | Flag | Description |
 |------|-------------|
-| `-D, --delete-branch` | Also delete the branch |
+| `-D, --delete-branch` | Delete the branch (no prompt) |
 | `--keep-branch` | Keep the branch (no prompt) |
-| `--force` | Skip confirmation |
 
 ### `sarj list`
 
-List worktrees with branch, path, and tmux session status.
+List worktrees with branch and tmux session status.
 
 ### `sarj init [--global]`
 
 Generate a config file with commented defaults.
+
+## Shell completions
+
+sarj supports bash, zsh, and fish. Run `sarj completion <shell> --help` for setup instructions.
 
 ## License
 
