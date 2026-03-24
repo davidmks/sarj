@@ -38,6 +38,8 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 				return err
 			}
 
+			opts.Progress = os.Stderr
+
 			wt, err := worktree.Create(r, cfg, opts)
 			if err != nil {
 				return err
@@ -71,17 +73,16 @@ func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree,
 		return nil
 	}
 
-	sessionName := tmux.SanitizeName(wt.Branch)
-
-	if err := tmux.CreateSession(r, sessionName, wt.Path, cfg.Tmux.Windows); err != nil {
+	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows); err != nil {
 		return err
 	}
 
+	sessionName := tmux.SanitizeName(wt.Branch)
 	fmt.Fprintf(os.Stderr, "Created tmux session %s\n", sessionName)
 
 	if skipAttach || !cfg.AutoAttach {
 		return nil
 	}
 
-	return tmux.Connect(r, sessionName)
+	return tmux.Connect(r, wt.Branch)
 }

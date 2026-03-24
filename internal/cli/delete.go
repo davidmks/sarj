@@ -16,14 +16,15 @@ import (
 )
 
 func newDeleteCmd(r exec.Runner) *cobra.Command {
-	var opts worktree.DeleteOpts
+	var deleteBranch bool
+	var keepBranch bool
 
 	cmd := &cobra.Command{
 		Use:   "delete <name>",
 		Short: "Remove a worktree and optionally its branch",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.Name = args[0]
+			name := args[0]
 
 			repoRoot, err := git.RepoRoot(r)
 			if err != nil {
@@ -36,38 +37,41 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 				return err
 			}
 
-			sessionName := tmux.SanitizeName(opts.Name)
 			fmt.Fprintf(os.Stderr, "Stopping tmux session...\n")
-			if err := tmux.KillSession(r, sessionName); err != nil {
+			if err := tmux.KillSession(r, name); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not kill tmux session: %v\n", err)
 			}
 
 			fmt.Fprintf(os.Stderr, "Removing worktree...\n")
-			if err := worktree.Delete(r, cfg, opts); err != nil {
+			if err := worktree.Delete(r, worktree.DeleteOpts{
+				WorktreeBase: cfg.WorktreeBase,
+				Name:         name,
+				Progress:     os.Stderr,
+			}); err != nil {
 				return err
 			}
 
-			if !opts.DeleteBranch && !opts.KeepBranch {
-				opts.DeleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", opts.Name))
+			if !deleteBranch && !keepBranch {
+				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", name))
 			}
 
 			branchStatus := "branch kept"
-			if opts.DeleteBranch {
-				if _, err := r.Run("git", "branch", "-D", opts.Name); err != nil {
+			if deleteBranch {
+				if _, err := r.Run("git", "branch", "-D", name); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not delete branch: %v\n", err)
 				} else {
 					branchStatus = "branch deleted"
 				}
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", opts.Name, branchStatus) //nolint:errcheck
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", name, branchStatus) //nolint:errcheck
 			return nil
 		},
 	}
 
-	cmd.Flags().BoolVarP(&opts.DeleteBranch, "delete-branch", "D", false, "also delete the branch")
-	cmd.Flags().BoolVar(&opts.KeepBranch, "keep-branch", false, "keep the branch (no prompt)")
-	cmd.Flags().BoolVar(&opts.Force, "force", false, "skip confirmation")
+	cmd.Flags().BoolVarP(&deleteBranch, "delete-branch", "D", false, "also delete the branch")
+	cmd.Flags().BoolVar(&keepBranch, "keep-branch", false, "keep the branch (no prompt)")
+	cmd.MarkFlagsMutuallyExclusive("delete-branch", "keep-branch")
 
 	cmd.ValidArgsFunction = completeWorktreeNames(r)
 

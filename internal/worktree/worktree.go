@@ -4,6 +4,7 @@ package worktree
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,14 +31,7 @@ type CreateOpts struct {
 	Base         string
 	SkipSetup    bool
 	SkipSymlinks bool
-}
-
-// DeleteOpts holds options for deleting a worktree.
-type DeleteOpts struct {
-	Name         string
-	DeleteBranch bool
-	KeepBranch   bool
-	Force        bool
+	Progress     io.Writer
 }
 
 // Create creates a new worktree with optional symlinks and setup command.
@@ -47,6 +41,11 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}
 	if opts.Base == "" {
 		opts.Base = cfg.DefaultBranch
+	}
+
+	w := opts.Progress
+	if w == nil {
+		w = io.Discard
 	}
 
 	dirName := strings.ReplaceAll(opts.Name, "/", "-")
@@ -60,12 +59,12 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 		return nil, fmt.Errorf("creating worktree base dir: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Fetching origin...\n")
+	fmt.Fprintf(w, "Fetching origin...\n")
 	if err := git.Fetch(r, "origin"); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: fetch failed, continuing with local state: %v\n", err)
+		fmt.Fprintf(w, "warning: fetch failed, continuing with local state: %v\n", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Creating worktree %s at %s\n", opts.Name, wtPath)
+	fmt.Fprintf(w, "Creating worktree %s at %s\n", opts.Name, wtPath)
 	branchCreated, err := addWorktree(r, wtPath, opts.Name, opts.Base)
 	if err != nil {
 		return nil, err
@@ -79,7 +78,7 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}()
 
 	if !opts.SkipSymlinks && len(cfg.Symlinks) > 0 {
-		fmt.Fprintf(os.Stderr, "Symlinking %d files...\n", len(cfg.Symlinks))
+		fmt.Fprintf(w, "Symlinking %d files...\n", len(cfg.Symlinks))
 		mainRepo, err := git.MainWorktree(r)
 		if err != nil {
 			return nil, fmt.Errorf("finding main worktree for symlinks: %w", err)
@@ -90,7 +89,7 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}
 
 	if !opts.SkipSetup && cfg.SetupCommand != "" {
-		fmt.Fprintf(os.Stderr, "Running setup command...\n")
+		fmt.Fprintf(w, "Running setup command...\n")
 		cmd := fmt.Sprintf("cd %q && %s", wtPath, cfg.SetupCommand)
 		if err := r.RunInteractive("sh", "-c", cmd); err != nil {
 			return nil, fmt.Errorf("setup command failed: %w", err)
@@ -104,18 +103,30 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}, nil
 }
 
+// DeleteOpts holds options for deleting a worktree.
+type DeleteOpts struct {
+	WorktreeBase string
+	Name         string
+	Progress     io.Writer
+}
+
 // Delete removes a worktree and prunes stale references.
 // Branch deletion is handled by the CLI layer (may require user prompt).
-func Delete(r exec.Runner, cfg *config.Config, opts DeleteOpts) error {
+func Delete(r exec.Runner, opts DeleteOpts) error {
+	w := opts.Progress
+	if w == nil {
+		w = io.Discard
+	}
+
 	dirName := strings.ReplaceAll(opts.Name, "/", "-")
-	wtPath := filepath.Join(cfg.WorktreeBase, dirName)
+	wtPath := filepath.Join(opts.WorktreeBase, dirName)
 
 	if _, err := r.Run("git", "worktree", "remove", "--force", wtPath); err != nil {
 		return fmt.Errorf("removing worktree %s: %w", opts.Name, err)
 	}
 
 	if _, err := r.Run("git", "worktree", "prune"); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: worktree prune failed: %v\n", err)
+		fmt.Fprintf(w, "warning: worktree prune failed: %v\n", err)
 	}
 
 	return nil

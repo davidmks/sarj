@@ -188,12 +188,11 @@ func TestCreate_RollbackKeepsBranchWhenPreexisting(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	wtBase := t.TempDir()
-	cfg := &config.Config{WorktreeBase: wtBase}
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree": {},
 	}}
 
-	err := worktree.Delete(r, cfg, worktree.DeleteOpts{Name: "my-feature"})
+	err := worktree.Delete(r, worktree.DeleteOpts{WorktreeBase: wtBase, Name: "my-feature"})
 
 	require.NoError(t, err)
 	assert.True(t, r.hasCall("worktree remove"))
@@ -202,12 +201,11 @@ func TestDelete(t *testing.T) {
 
 func TestDelete_RemoveFails(t *testing.T) {
 	wtBase := t.TempDir()
-	cfg := &config.Config{WorktreeBase: wtBase}
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree remove": {err: fmt.Errorf("locked")},
 	}}
 
-	err := worktree.Delete(r, cfg, worktree.DeleteOpts{Name: "locked-wt"})
+	err := worktree.Delete(r, worktree.DeleteOpts{WorktreeBase: wtBase, Name: "locked-wt"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "removing worktree")
