@@ -117,7 +117,9 @@ func TestLoadWithPaths_InvalidToml(t *testing.T) {
 
 func TestGlobalPath_XDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
-	assert.Equal(t, "/custom/config/sarj/config.toml", config.GlobalPath())
+	path, err := config.GlobalPath()
+	require.NoError(t, err)
+	assert.Equal(t, "/custom/config/sarj/config.toml", path)
 }
 
 func TestExpandPath_Tilde(t *testing.T) {

@@ -62,12 +62,15 @@ func Defaults(repoName string) Config {
 }
 
 // GlobalPath returns the default global config file path.
-func GlobalPath() string {
+func GlobalPath() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "sarj", "config.toml")
+		return filepath.Join(xdg, "sarj", "config.toml"), nil
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "sarj", "config.toml")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("determining home directory: %w", err)
+	}
+	return filepath.Join(home, ".config", "sarj", "config.toml"), nil
 }
 
 // ProjectPath returns the per-project config file path for a given repo root.
@@ -78,7 +81,11 @@ func ProjectPath(repoRoot string) string {
 // Load reads global and per-project configs, merges them, and applies defaults.
 // repoRoot is the git repository root; repoName is used for template expansion.
 func Load(repoRoot, repoName string) (*Config, error) {
-	return LoadWithPaths(GlobalPath(), ProjectPath(repoRoot), repoName)
+	globalPath, err := GlobalPath()
+	if err != nil {
+		return nil, err
+	}
+	return LoadWithPaths(globalPath, ProjectPath(repoRoot), repoName)
 }
 
 // LoadWithPaths is like Load but accepts explicit file paths (for testing).
@@ -96,7 +103,11 @@ func LoadWithPaths(globalPath, projectPath, repoName string) (*Config, error) {
 
 	merge(&cfg, &proj)
 
-	cfg.WorktreeBase = expandPath(cfg.WorktreeBase, repoName)
+	expanded, err := expandPath(cfg.WorktreeBase, repoName)
+	if err != nil {
+		return nil, err
+	}
+	cfg.WorktreeBase = expanded
 
 	return &cfg, nil
 }
@@ -130,10 +141,13 @@ func merge(global, project *Config) {
 }
 
 // expandPath replaces ~ with $HOME and {{.RepoName}} with the repo name.
-func expandPath(path, repoName string) string {
+func expandPath(path, repoName string) (string, error) {
 	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("determining home directory: %w", err)
+		}
 		path = filepath.Join(home, path[2:])
 	}
-	return strings.ReplaceAll(path, "{{.RepoName}}", repoName)
+	return strings.ReplaceAll(path, "{{.RepoName}}", repoName), nil
 }
