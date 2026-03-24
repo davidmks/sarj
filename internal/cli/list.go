@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/davidmks/sarj/internal/exec"
+	"github.com/davidmks/sarj/internal/git"
 	"github.com/davidmks/sarj/internal/tmux"
 	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/spf13/cobra"
@@ -22,21 +23,22 @@ func newListCmd(r exec.Runner) *cobra.Command {
 				return err
 			}
 
+			mainWT, _ := git.MainWorktree(r)
+
 			sessions, _ := tmux.ListSessions(r)
 			sessionSet := make(map[string]bool, len(sessions))
 			for _, s := range sessions {
 				sessionSet[s] = true
 			}
 
-			// Skip the main worktree (always the first entry)
-			if len(wts) > 0 {
-				wts = wts[1:]
-			}
-
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tBRANCH\tTMUX") //nolint:errcheck
 
 			for _, wt := range wts {
+				if wt.Path == mainWT {
+					continue
+				}
+
 				name := filepath.Base(wt.Path)
 				sessionName := tmux.SanitizeName(name)
 

@@ -105,6 +105,7 @@ func TestListCmd(t *testing.T) {
 
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree list --porcelain": {out: porcelain},
+		"git worktree list":             {out: porcelain},
 		"tmux list-sessions":            {out: "my-feature"},
 	}}
 
@@ -127,6 +128,7 @@ func TestListCmd_Empty(t *testing.T) {
 
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree list --porcelain": {out: porcelain},
+		"git worktree list":             {out: porcelain},
 		"tmux list-sessions":            {out: ""},
 	}}
 
