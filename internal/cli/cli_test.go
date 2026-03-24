@@ -85,6 +85,51 @@ func TestInitGlobal_AlreadyExists(t *testing.T) {
 	assert.ErrorContains(t, err, "config already exists")
 }
 
+func TestInitLocal(t *testing.T) {
+	dir := t.TempDir()
+	r := &fakeRunner{responses: map[string]response{
+		"git rev-parse": {out: dir},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"init", "--local"})
+	require.NoError(t, cmd.Execute())
+
+	configPath := filepath.Join(dir, ".sarj.local.toml")
+	assert.Contains(t, buf.String(), configPath)
+	assert.FileExists(t, configPath)
+
+	content, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "DO NOT commit")
+	assert.Contains(t, string(content), "setup_command")
+}
+
+func TestInitLocal_AlreadyExists(t *testing.T) {
+	dir := t.TempDir()
+	r := &fakeRunner{responses: map[string]response{
+		"git rev-parse": {out: dir},
+	}}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.local.toml"), []byte(""), 0o600))
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"init", "--local"})
+	err := cmd.Execute()
+
+	assert.ErrorContains(t, err, "config already exists")
+}
+
+func TestInitGlobalAndLocal_MutuallyExclusive(t *testing.T) {
+	r := &fakeRunner{}
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"init", "--global", "--local"})
+	err := cmd.Execute()
+
+	require.Error(t, err)
+}
+
 func TestInitGlobal_CreatesParentDirs(t *testing.T) {
 	dir := t.TempDir()
 	nested := filepath.Join(dir, "deep", "nested")

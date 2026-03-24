@@ -79,8 +79,28 @@ const projectConfigTemplate = `# sarj per-project configuration
 # ]
 `
 
+const localConfigTemplate = `# sarj local configuration (per-user, per-project)
+# DO NOT commit this file — add .sarj.local.toml to .gitignore.
+# Sections defined here override the corresponding section from .sarj.toml.
+# See https://github.com/davidmks/sarj for documentation
+
+# Override the setup command for your local environment.
+# setup_command = "make setup-local"
+
+# Override symlinks — replaces the project symlinks entirely.
+# symlinks = [".env"]
+
+# Override tmux windows — replaces the global windows entirely.
+# [tmux]
+# enabled = true
+#
+# [[tmux.windows]]
+# name = "server"
+# command = "make dev"
+`
+
 func newInitCmd(r exec.Runner) *cobra.Command {
-	var global bool
+	var global, local bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -90,11 +110,16 @@ func newInitCmd(r exec.Runner) *cobra.Command {
 			if global {
 				return initGlobal(cmd)
 			}
+			if local {
+				return initLocal(cmd, r)
+			}
 			return initProject(cmd, r)
 		},
 	}
 
 	cmd.Flags().BoolVar(&global, "global", false, "generate global config at ~/.config/sarj/config.toml")
+	cmd.Flags().BoolVar(&local, "local", false, "generate local config at .sarj.local.toml (gitignored, per-user)")
+	cmd.MarkFlagsMutuallyExclusive("global", "local")
 
 	return cmd
 }
@@ -114,6 +139,26 @@ func initGlobal(cmd *cobra.Command) error {
 	}
 
 	if err := os.WriteFile(path, []byte(globalConfigTemplate), 0o600); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Created %s\n", path) //nolint:errcheck
+	return nil
+}
+
+func initLocal(cmd *cobra.Command, r exec.Runner) error {
+	repoRoot, err := git.RepoRoot(r)
+	if err != nil {
+		return err
+	}
+
+	path := config.LocalPath(repoRoot)
+
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("config already exists: %s", path)
+	}
+
+	if err := os.WriteFile(path, []byte(localConfigTemplate), 0o600); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 

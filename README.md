@@ -79,6 +79,9 @@ sarj init
 
 # Global config (personal preferences)
 sarj init --global
+
+# Local config (per-user, per-project — gitignored)
+sarj init --local
 ```
 
 ### Global: `~/.config/sarj/config.toml`
@@ -141,7 +144,11 @@ symlinks = [
 ]
 ```
 
-When both configs exist, per-project wins for `default_branch`, `setup_command`, and `symlinks`. Tmux windows always come from the global config (they're personal preference).
+### Local: `.sarj.local.toml`
+
+Per-user overrides for a specific project — gitignored, never committed. Sections defined here replace the corresponding section from the project or global config. Generate with `sarj init --local`.
+
+When multiple configs exist: **Global → Project → Local**, each layer overrides the one above for sections it defines.
 
 ## Commands
 
@@ -170,7 +177,7 @@ Remove a worktree and kill its tmux session.
 
 List worktrees with branch and tmux session status.
 
-### `sarj init [--global]`
+### `sarj init [--global | --local]`
 
 Generate a config file with commented defaults.
 

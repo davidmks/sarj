@@ -78,18 +78,24 @@ func ProjectPath(repoRoot string) string {
 	return filepath.Join(repoRoot, ".sarj.toml")
 }
 
-// Load reads global and per-project configs, merges them, and applies defaults.
+// LocalPath returns the per-user, per-project config file path.
+// This file should be gitignored and never committed.
+func LocalPath(repoRoot string) string {
+	return filepath.Join(repoRoot, ".sarj.local.toml")
+}
+
+// Load reads global, per-project, and local configs, merges them, and applies defaults.
 // repoRoot is the git repository root; repoName is used for template expansion.
 func Load(repoRoot, repoName string) (*Config, error) {
 	globalPath, err := GlobalPath()
 	if err != nil {
 		return nil, err
 	}
-	return LoadWithPaths(globalPath, ProjectPath(repoRoot), repoName)
+	return LoadWithPaths(globalPath, ProjectPath(repoRoot), LocalPath(repoRoot), repoName)
 }
 
 // LoadWithPaths is like Load but accepts explicit file paths (for testing).
-func LoadWithPaths(globalPath, projectPath, repoName string) (*Config, error) {
+func LoadWithPaths(globalPath, projectPath, localPath, repoName string) (*Config, error) {
 	cfg := Defaults(repoName)
 
 	if err := loadFile(globalPath, &cfg); err != nil {
@@ -102,6 +108,13 @@ func LoadWithPaths(globalPath, projectPath, repoName string) (*Config, error) {
 	}
 
 	merge(&cfg, &proj)
+
+	var local Config
+	if err := loadFile(localPath, &local); err != nil {
+		return nil, fmt.Errorf("loading local config: %w", err)
+	}
+
+	mergeLocal(&cfg, &local)
 
 	expanded, err := expandPath(cfg.WorktreeBase, repoName)
 	if err != nil {
@@ -137,6 +150,26 @@ func merge(global, project *Config) {
 	}
 	if len(project.Symlinks) > 0 {
 		global.Symlinks = project.Symlinks
+	}
+}
+
+// mergeLocal overlays local (per-user, per-project) fields onto the merged config.
+// Unlike merge, local can override any section including tmux.
+func mergeLocal(base, local *Config) {
+	if local.WorktreeBase != "" {
+		base.WorktreeBase = local.WorktreeBase
+	}
+	if local.DefaultBranch != "" {
+		base.DefaultBranch = local.DefaultBranch
+	}
+	if local.SetupCommand != "" {
+		base.SetupCommand = local.SetupCommand
+	}
+	if len(local.Symlinks) > 0 {
+		base.Symlinks = local.Symlinks
+	}
+	if len(local.Tmux.Windows) > 0 {
+		base.Tmux.Windows = local.Tmux.Windows
 	}
 }
 
