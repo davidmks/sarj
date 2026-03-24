@@ -178,7 +178,7 @@ func BuildCommand(envFile string, env map[string]string, command string) string 
 	var parts []string
 
 	if envFile != "" {
-		parts = append(parts, fmt.Sprintf("set -a && source %s && set +a", envFile))
+		parts = append(parts, fmt.Sprintf("set -a && source %s && set +a", shellQuote(envFile)))
 	}
 
 	if len(env) > 0 {
@@ -190,7 +190,7 @@ func BuildCommand(envFile string, env map[string]string, command string) string 
 
 		var exports []string
 		for _, k := range keys {
-			exports = append(exports, fmt.Sprintf("%s=%s", k, env[k]))
+			exports = append(exports, fmt.Sprintf("%s=%s", k, shellQuote(env[k])))
 		}
 		parts = append(parts, "export "+strings.Join(exports, " "))
 	}
@@ -202,4 +202,17 @@ func BuildCommand(envFile string, env map[string]string, command string) string 
 	}
 
 	return strings.Join(parts, " && ")
+}
+
+// shellQuote wraps s in single quotes if it contains shell-unsafe characters.
+func shellQuote(s string) string {
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '/' || c == ':' || c == '=') {
+			// Replace single quotes inside the value: can't -> can'\''t
+			s = strings.ReplaceAll(s, "'", `'\''`)
+			return "'" + s + "'"
+		}
+	}
+	return s
 }

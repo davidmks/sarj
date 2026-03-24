@@ -349,6 +349,16 @@ func TestBuildCommand(t *testing.T) {
 			want:    "export A_VAR=a Z_VAR=z && clear && bash",
 		},
 		{
+			name: "env var with spaces",
+			env:  map[string]string{"MSG": "hello world"},
+			want: "export MSG='hello world' && clear",
+		},
+		{
+			name:    "env file with spaces",
+			envFile: "my env.sh",
+			want:    "set -a && source 'my env.sh' && set +a && clear",
+		},
+		{
 			name: "empty",
 			want: "clear",
 		},
