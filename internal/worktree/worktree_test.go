@@ -1,6 +1,7 @@
 package worktree_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,8 +56,9 @@ func TestCreate_NewBranch(t *testing.T) {
 	wtBase := t.TempDir()
 	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
 	r := &fakeRunner{responses: map[string]response{
-		"git fetch":    {},
-		"git show-ref": {err: fmt.Errorf("not found")},
+		"git fetch": {},
+		"git show-ref --verify --quiet refs/heads/my-feature":    {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/origin/main": {},
 		"git worktree": {},
 	}}
 
@@ -68,15 +70,17 @@ func TestCreate_NewBranch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "my-feature", wt.Branch)
 	assert.Equal(t, filepath.Join(wtBase, "my-feature"), wt.Path)
+	assert.True(t, r.hasCall(wtBase+"/my-feature origin/main"))
 }
 
 func TestCreate_ExistingBranch(t *testing.T) {
 	wtBase := t.TempDir()
 	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
 	r := &fakeRunner{responses: map[string]response{
-		"git fetch":    {},
-		"git show-ref": {},
+		"git fetch": {},
+		"git show-ref --verify --quiet refs/heads/existing-branch": {},
 		"git worktree": {},
+		"git rev-list": {out: "0"},
 	}}
 
 	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
@@ -95,8 +99,9 @@ func TestCreate_GeneratesName(t *testing.T) {
 	wtBase := t.TempDir()
 	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
 	r := &fakeRunner{responses: map[string]response{
-		"git fetch":    {},
-		"git show-ref": {err: fmt.Errorf("not found")},
+		"git fetch": {},
+		"git show-ref --verify --quiet refs/heads/":   {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/": {},
 		"git worktree": {},
 	}}
 
@@ -137,6 +142,7 @@ func TestCreate_FetchFailsContinues(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "offline", wt.Branch)
+	assert.True(t, r.hasCall(wtBase+"/offline main"))
 }
 
 func TestCreate_RollbackOnSetupFailure(t *testing.T) {
@@ -148,8 +154,9 @@ func TestCreate_RollbackOnSetupFailure(t *testing.T) {
 	}
 	r := &fakeRunner{
 		responses: map[string]response{
-			"git fetch":    {},
-			"git show-ref": {err: fmt.Errorf("not found")},
+			"git fetch": {},
+			"git show-ref --verify --quiet refs/heads/doomed":        {err: fmt.Errorf("not found")},
+			"git show-ref --verify --quiet refs/remotes/origin/main": {},
 			"git worktree": {},
 		},
 		interactiveErr: fmt.Errorf("setup failed"),
@@ -172,9 +179,10 @@ func TestCreate_RollbackKeepsBranchWhenPreexisting(t *testing.T) {
 	}
 	r := &fakeRunner{
 		responses: map[string]response{
-			"git fetch":    {},
-			"git show-ref": {},
+			"git fetch": {},
+			"git show-ref --verify --quiet refs/heads/preexisting": {},
 			"git worktree": {},
+			"git rev-list": {out: "0"},
 		},
 		interactiveErr: fmt.Errorf("setup failed"),
 	}
@@ -184,6 +192,127 @@ func TestCreate_RollbackKeepsBranchWhenPreexisting(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, r.hasCall("worktree remove --force"))
 	assert.False(t, r.hasCall("branch -D"))
+}
+
+func TestCreate_NewBranch_FallsBackToLocal(t *testing.T) {
+	wtBase := t.TempDir()
+	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
+	r := &fakeRunner{responses: map[string]response{
+		"git fetch":    {},
+		"git show-ref": {err: fmt.Errorf("not found")},
+		"git worktree": {},
+	}}
+
+	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+		Name:      "my-feature",
+		SkipSetup: true,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "my-feature", wt.Branch)
+	assert.True(t, r.hasCall(wtBase+"/my-feature main"))
+}
+
+func TestCreate_NewBranch_BaseAlreadyRemoteRef(t *testing.T) {
+	wtBase := t.TempDir()
+	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
+	r := &fakeRunner{responses: map[string]response{
+		"git fetch": {},
+		"git show-ref --verify --quiet refs/heads/my-feature": {err: fmt.Errorf("not found")},
+		"git worktree": {},
+	}}
+
+	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+		Name:      "my-feature",
+		Base:      "origin/develop",
+		SkipSetup: true,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "my-feature", wt.Branch)
+	assert.True(t, r.hasCall(wtBase+"/my-feature origin/develop"))
+}
+
+func TestCreate_ExistingBranch_BehindWarning(t *testing.T) {
+	wtBase := t.TempDir()
+	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
+	var buf bytes.Buffer
+	r := &fakeRunner{responses: map[string]response{
+		"git fetch": {},
+		"git show-ref --verify --quiet refs/heads/stale-branch": {},
+		"git worktree": {},
+		"git rev-list": {out: "3"},
+	}}
+
+	_, err := worktree.Create(r, cfg, worktree.CreateOpts{
+		Name:      "stale-branch",
+		SkipSetup: true,
+		Progress:  &buf,
+	})
+
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "warning: branch stale-branch is 3 commit(s) behind origin/stale-branch")
+}
+
+func TestCreate_ExistingBranch_NotBehind(t *testing.T) {
+	wtBase := t.TempDir()
+	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
+	var buf bytes.Buffer
+	r := &fakeRunner{responses: map[string]response{
+		"git fetch": {},
+		"git show-ref --verify --quiet refs/heads/up-to-date": {},
+		"git worktree": {},
+		"git rev-list": {out: "0"},
+	}}
+
+	_, err := worktree.Create(r, cfg, worktree.CreateOpts{
+		Name:      "up-to-date",
+		SkipSetup: true,
+		Progress:  &buf,
+	})
+
+	require.NoError(t, err)
+	assert.NotContains(t, buf.String(), "warning: branch")
+}
+
+func TestCreate_ExistingBranch_NoRemoteCounterpart(t *testing.T) {
+	wtBase := t.TempDir()
+	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
+	var buf bytes.Buffer
+	r := &fakeRunner{responses: map[string]response{
+		"git fetch": {},
+		"git show-ref --verify --quiet refs/heads/local-only": {},
+		"git worktree": {},
+		"git rev-list": {err: fmt.Errorf("unknown revision")},
+	}}
+
+	_, err := worktree.Create(r, cfg, worktree.CreateOpts{
+		Name:      "local-only",
+		SkipSetup: true,
+		Progress:  &buf,
+	})
+
+	require.NoError(t, err)
+	assert.NotContains(t, buf.String(), "warning: branch")
+}
+
+func TestCreate_FetchFailsFallsBackToLocal(t *testing.T) {
+	wtBase := t.TempDir()
+	cfg := &config.Config{WorktreeBase: wtBase, DefaultBranch: "main"}
+	r := &fakeRunner{responses: map[string]response{
+		"git fetch":    {err: fmt.Errorf("network error")},
+		"git show-ref": {err: fmt.Errorf("not found")},
+		"git worktree": {},
+	}}
+
+	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+		Name:      "offline-new",
+		SkipSetup: true,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "offline-new", wt.Branch)
+	assert.True(t, r.hasCall(wtBase+"/offline-new main"))
 }
 
 func TestDelete(t *testing.T) {

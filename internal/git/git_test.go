@@ -159,3 +159,53 @@ func TestBranchExists(t *testing.T) {
 		assert.False(t, git.BranchExists(r, "nope"))
 	})
 }
+
+func TestRemoteRefExists(t *testing.T) {
+	t.Run("exists", func(t *testing.T) {
+		r := &fakeRunner{}
+		assert.True(t, git.RemoteRefExists(r, "origin/main"))
+	})
+
+	t.Run("does not exist", func(t *testing.T) {
+		r := &fakeRunner{err: fmt.Errorf("not found")}
+		assert.False(t, git.RemoteRefExists(r, "origin/nope"))
+	})
+}
+
+func TestCommitsBehind(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		err  error
+		want int
+	}{
+		{
+			name: "behind by 3",
+			out:  "3",
+			want: 3,
+		},
+		{
+			name: "not behind",
+			out:  "0",
+			want: 0,
+		},
+		{
+			name: "error returns zero",
+			err:  fmt.Errorf("unknown revision"),
+			want: 0,
+		},
+		{
+			name: "invalid output returns zero",
+			out:  "notanumber",
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &fakeRunner{out: tt.out, err: tt.err}
+			got := git.CommitsBehind(r, "feature", "origin/feature")
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

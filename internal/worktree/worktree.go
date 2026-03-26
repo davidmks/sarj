@@ -61,7 +61,7 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}
 
 	progress(w, "Creating worktree %s at %s\n", opts.Name, wtPath)
-	branchCreated, err := addWorktree(r, wtPath, opts.Name, opts.Base)
+	branchCreated, err := addWorktree(r, w, wtPath, opts.Name, opts.Base)
 	if err != nil {
 		return nil, err
 	}
@@ -142,17 +142,34 @@ func progress(w io.Writer, format string, args ...any) {
 	fmt.Fprintf(w, format, args...) //nolint:errcheck
 }
 
+// resolveStartPoint returns the best ref to use as the start point for a new branch.
+// It prefers origin/<base> over local <base> to avoid stale state after fetch.
+func resolveStartPoint(r exec.Runner, base string) string {
+	if strings.HasPrefix(base, "origin/") {
+		return base
+	}
+	remoteRef := "origin/" + base
+	if git.RemoteRefExists(r, remoteRef) {
+		return remoteRef
+	}
+	return base
+}
+
 // addWorktree creates the git worktree, reusing an existing branch or creating a new one.
 // Returns whether a new branch was created (for rollback decisions).
-func addWorktree(r exec.Runner, wtPath, name, base string) (bool, error) {
+func addWorktree(r exec.Runner, w io.Writer, wtPath, name, base string) (bool, error) {
 	if git.BranchExists(r, name) {
 		if _, err := r.Run("git", "worktree", "add", wtPath, name); err != nil {
 			return false, fmt.Errorf("adding worktree for existing branch: %w", err)
 		}
+		if behind := git.CommitsBehind(r, name, "origin/"+name); behind > 0 {
+			progress(w, "warning: branch %s is %d commit(s) behind origin/%s\n", name, behind, name)
+		}
 		return false, nil
 	}
 
-	if _, err := r.Run("git", "worktree", "add", "-b", name, wtPath, base); err != nil {
+	startPoint := resolveStartPoint(r, base)
+	if _, err := r.Run("git", "worktree", "add", "-b", name, wtPath, startPoint); err != nil {
 		return false, fmt.Errorf("adding worktree with new branch: %w", err)
 	}
 	return true, nil
