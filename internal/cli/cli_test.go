@@ -194,10 +194,11 @@ func TestCreateCmd(t *testing.T) {
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
 	r := &fakeRunner{responses: map[string]response{
-		"git worktree list --porcelain": {out: porcelain},
-		"git fetch":                     {},
-		"git show-ref":                  {err: fmt.Errorf("not found")},
-		"git worktree":                  {},
+		"git worktree list --porcelain":                          {out: porcelain},
+		"git fetch":                                              {},
+		"git show-ref --verify --quiet refs/heads/my-feature":    {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/origin/main": {},
+		"git worktree": {},
 	}}
 
 	cmd := cli.NewRootCmd("test", r)
@@ -215,10 +216,11 @@ func TestCreateCmd_Error(t *testing.T) {
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
 	r := &fakeRunner{responses: map[string]response{
-		"git worktree list --porcelain": {out: porcelain},
-		"git fetch":                     {},
-		"git show-ref":                  {err: fmt.Errorf("not found")},
-		"git worktree add":              {err: fmt.Errorf("fatal: could not create")},
+		"git worktree list --porcelain":                          {out: porcelain},
+		"git fetch":                                              {},
+		"git show-ref --verify --quiet refs/heads/bad-wt":        {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/origin/main": {},
+		"git worktree add": {err: fmt.Errorf("fatal: could not create")},
 	}}
 
 	cmd := cli.NewRootCmd("test", r)

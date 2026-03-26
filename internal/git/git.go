@@ -3,6 +3,7 @@ package git
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/davidmks/sarj/internal/exec"
@@ -65,4 +66,24 @@ func Fetch(r exec.Runner, remote string) error {
 func BranchExists(r exec.Runner, name string) bool {
 	_, err := r.Run("git", "show-ref", "--verify", "--quiet", "refs/heads/"+name)
 	return err == nil
+}
+
+// RemoteRefExists checks if a remote-tracking ref exists (e.g., "origin/main").
+func RemoteRefExists(r exec.Runner, ref string) bool {
+	_, err := r.Run("git", "show-ref", "--verify", "--quiet", "refs/remotes/"+ref)
+	return err == nil
+}
+
+// CommitsBehind returns the number of commits local is behind remote.
+// Both refs are used as-is (e.g., "main", "origin/main"). Returns 0 if the comparison fails.
+func CommitsBehind(r exec.Runner, local, remote string) int {
+	out, err := r.Run("git", "rev-list", "--count", local+".."+remote)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0
+	}
+	return n
 }
