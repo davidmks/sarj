@@ -11,9 +11,10 @@ import (
 	"github.com/davidmks/sarj/internal/exec"
 )
 
-var nameReplacer = strings.NewReplacer(".", "-", ":", "-")
+var nameReplacer = strings.NewReplacer(".", "-", ":", "-", "/", "-")
 
-// SanitizeName replaces characters that tmux forbids in session names (. and :) with -.
+// SanitizeName replaces characters that are problematic in tmux session names
+// (., :, and /) with -.
 func SanitizeName(name string) string {
 	return nameReplacer.Replace(name)
 }

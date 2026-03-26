@@ -66,7 +66,7 @@ func TestSanitizeName(t *testing.T) {
 		{name: "colons replaced", in: "feat:v2", want: "feat-v2"},
 		{name: "both replaced", in: "my.feat:v2", want: "my-feat-v2"},
 		{name: "no change needed", in: "my-feature", want: "my-feature"},
-		{name: "slashes preserved", in: "feat/v2", want: "feat/v2"},
+		{name: "slashes replaced", in: "feat/v2", want: "feat-v2"},
 	}
 
 	for _, tt := range tests {

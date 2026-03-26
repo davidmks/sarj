@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/davidmks/sarj/internal/cli"
+	"github.com/davidmks/sarj/internal/tmux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -141,6 +142,30 @@ func TestInitGlobal_CreatesParentDirs(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 
 	assert.FileExists(t, filepath.Join(nested, "sarj", "config.toml"))
+}
+
+func TestListCmd_SlashBranch(t *testing.T) {
+	isolateConfig(t)
+	branch := "feat/auth"
+	porcelain := "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/feat-auth\nHEAD def\nbranch refs/heads/" + branch + "\n\n"
+
+	sessionName := tmux.SanitizeName(branch)
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux list-sessions":            {out: sessionName},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"list"})
+
+	require.NoError(t, cmd.Execute())
+
+	out := buf.String()
+	assert.Contains(t, out, "feat-auth")
+	assert.Contains(t, out, "active")
 }
 
 func TestListCmd(t *testing.T) {
