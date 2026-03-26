@@ -38,3 +38,7 @@ homebrew_casks:
     homepage: https://github.com/davidmks/sarj
     description: Git worktree + tmux session manager
     license: MIT
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/sarj"]
