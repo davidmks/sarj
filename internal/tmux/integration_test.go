@@ -113,5 +113,5 @@ func TestIntegration_SanitizedSessionName(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, tmux.SessionExists(r, "feat-v2"))
-	assert.False(t, tmux.SessionExists(r, "feat.v2"))
+	assert.True(t, tmux.SessionExists(r, "feat.v2"), "unsanitized name should also resolve")
 }
