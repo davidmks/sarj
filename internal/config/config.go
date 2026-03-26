@@ -116,6 +116,10 @@ func LoadWithPaths(globalPath, projectPath, localPath, repoName string) (*Config
 
 	mergeLocal(&cfg, &local)
 
+	if err := validateWindows(cfg.Tmux.Windows); err != nil {
+		return nil, err
+	}
+
 	expanded, err := expandPath(cfg.WorktreeBase, repoName)
 	if err != nil {
 		return nil, err
@@ -123,6 +127,20 @@ func LoadWithPaths(globalPath, projectPath, localPath, repoName string) (*Config
 	cfg.WorktreeBase = expanded
 
 	return &cfg, nil
+}
+
+// validateWindows checks that window and pane fields contain valid values.
+func validateWindows(windows []WindowConfig) error {
+	for _, w := range windows {
+		for _, p := range w.Panes {
+			switch p.Split {
+			case "", "horizontal", "vertical":
+			default:
+				return fmt.Errorf("invalid pane split %q in window %q: must be \"horizontal\" or \"vertical\"", p.Split, w.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // loadFile reads a TOML file into dst. Returns nil if the file doesn't exist.
