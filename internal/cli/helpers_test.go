@@ -40,12 +40,16 @@ func (f *fakeRunner) RunInteractive(_ string, _ ...string) error {
 }
 
 func (f *fakeRunner) hasCall(substr string) bool {
-	for _, c := range f.calls {
+	return f.indexOfCall(substr) >= 0
+}
+
+func (f *fakeRunner) indexOfCall(substr string) int {
+	for i, c := range f.calls {
 		if strings.Contains(c, substr) {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 // isolateConfig prevents tests from loading the user's real global config.
