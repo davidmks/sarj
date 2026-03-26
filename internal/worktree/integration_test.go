@@ -61,7 +61,7 @@ func TestIntegration_CreateListDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, wts, 2)
 
-	err = worktree.Delete(r, worktree.DeleteOpts{WorktreeBase: wtBase, Name: "test-branch"})
+	err = worktree.Delete(r, worktree.DeleteOpts{Path: wt.Path})
 	require.NoError(t, err)
 	assert.NoDirExists(t, wt.Path)
 
@@ -95,7 +95,7 @@ func TestIntegration_CreateWithSymlinks(t *testing.T) {
 	actual, _ := filepath.EvalSymlinks(target)
 	assert.Equal(t, expected, actual)
 
-	require.NoError(t, worktree.Delete(r, worktree.DeleteOpts{WorktreeBase: wtBase, Name: "symlink-test"}))
+	require.NoError(t, worktree.Delete(r, worktree.DeleteOpts{Path: wt.Path}))
 }
 
 func TestIntegration_CreateExistingBranch(t *testing.T) {
@@ -119,5 +119,5 @@ func TestIntegration_CreateExistingBranch(t *testing.T) {
 	assert.Equal(t, "existing-branch", wt.Branch)
 	assert.DirExists(t, wt.Path)
 
-	require.NoError(t, worktree.Delete(r, worktree.DeleteOpts{WorktreeBase: wtBase, Name: "existing-branch"}))
+	require.NoError(t, worktree.Delete(r, worktree.DeleteOpts{Path: wt.Path}))
 }

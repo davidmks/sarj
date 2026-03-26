@@ -234,6 +234,7 @@ func TestDeleteCmd_KeepBranch(t *testing.T) {
 	saveCwd(t)
 	dir := newRepoDir(t)
 	wtPath := filepath.Join(dir, "wt", "my-feature")
+	fakeWorktreeDir(t, wtPath)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
@@ -258,6 +259,7 @@ func TestDeleteCmd_DeleteBranch(t *testing.T) {
 	saveCwd(t)
 	dir := newRepoDir(t)
 	wtPath := filepath.Join(dir, "wt", "my-feature")
+	fakeWorktreeDir(t, wtPath)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
@@ -283,6 +285,7 @@ func TestDeleteCmd_DeleteBranch_DivergentName(t *testing.T) {
 	saveCwd(t)
 	dir := newRepoDir(t)
 	wtPath := filepath.Join(dir, "wt", "issue-1")
+	fakeWorktreeDir(t, wtPath)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/fix/1-delete-bug\n\n"
@@ -304,11 +307,84 @@ func TestDeleteCmd_DeleteBranch_DivergentName(t *testing.T) {
 	assert.False(t, r.hasCall("branch -D issue-1"))
 }
 
+func TestDeleteCmd_NotFound(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"delete", "ghost", "--keep-branch"})
+
+	err := cmd.Execute()
+	assert.ErrorContains(t, err, "worktree ghost not found")
+}
+
+func TestDeleteCmd_StaleEntry(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	wtPath := filepath.Join(dir, "wt", "stale-wt")
+	// Intentionally NOT creating the directory — simulates a stale entry.
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/stale-wt\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"git branch":                    {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"delete", "stale-wt", "-D"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "branch deleted")
+	assert.False(t, r.hasCall("worktree remove"), "should skip remove for missing directory")
+	assert.True(t, r.hasCall("worktree prune"))
+}
+
+func TestDeleteCmd_StaleEntry_DivergentName(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	wtPath := filepath.Join(dir, "wt", "issue-3")
+	// Intentionally NOT creating the directory.
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/fix/3-combo-bug\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"git branch":                    {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"delete", "issue-3", "-D"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "branch deleted")
+	assert.True(t, r.hasCall("branch -D fix/3-combo-bug"))
+	assert.False(t, r.hasCall("branch -D issue-3"))
+	assert.True(t, r.hasCall("worktree prune"))
+}
+
 func TestDeleteCmd_CleanupBeforeKill(t *testing.T) {
 	isolateConfig(t)
 	saveCwd(t)
 	dir := newRepoDir(t)
 	wtPath := filepath.Join(dir, "wt", "my-feature")
+	fakeWorktreeDir(t, wtPath)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
@@ -343,6 +419,7 @@ func TestDeleteCmd_SwitchesAwayBeforeKill(t *testing.T) {
 	dir := newRepoDir(t)
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
 	wtPath := filepath.Join(dir, "wt", "my-feature")
+	fakeWorktreeDir(t, wtPath)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
@@ -373,6 +450,7 @@ func TestDeleteCmd_NoSwitchWhenOutsideTmux(t *testing.T) {
 	dir := newRepoDir(t)
 	t.Setenv("TMUX", "")
 	wtPath := filepath.Join(dir, "wt", "my-feature")
+	fakeWorktreeDir(t, wtPath)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
@@ -396,6 +474,7 @@ func TestDeleteCmd_NoSwitchWhenDifferentSession(t *testing.T) {
 	dir := newRepoDir(t)
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
 	wtPath := filepath.Join(dir, "wt", "my-feature")
+	fakeWorktreeDir(t, wtPath)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
