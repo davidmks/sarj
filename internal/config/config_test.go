@@ -233,3 +233,21 @@ func TestLoadWithPaths_InvalidLocalToml(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "loading local config")
 }
+
+func TestLoadWithPaths_InvalidPaneSplit(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.project, `
+[[tmux.windows]]
+name = "dev"
+
+[[tmux.windows.panes]]
+command = "nvim ."
+split = "horizonal"
+`)
+
+	_, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid pane split")
+}
