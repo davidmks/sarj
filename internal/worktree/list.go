@@ -18,17 +18,25 @@ func List(r exec.Runner) ([]Worktree, error) {
 	return parsePorcelain(out), nil
 }
 
-// FindBranch returns the branch checked out in the named worktree.
-// Returns the worktree name itself if no match is found or the worktree is in
-// detached HEAD state.
-func FindBranch(wts []Worktree, wtBase, name string) string {
-	wtPath := filepath.Join(wtBase, DirName(name))
-	for _, wt := range wts {
-		if wt.Path == wtPath && wt.Branch != "" {
-			return wt.Branch
+// MainPath returns the path of the main (first) worktree from a pre-fetched
+// list. Git always lists the main worktree first.
+func MainPath(wts []Worktree) string {
+	if len(wts) > 0 {
+		return wts[0].Path
+	}
+	return ""
+}
+
+// FindByName returns the worktree whose directory basename matches the given
+// name. Returns nil if no match is found.
+func FindByName(wts []Worktree, name string) *Worktree {
+	dirName := DirName(name)
+	for i := range wts {
+		if filepath.Base(wts[i].Path) == dirName {
+			return &wts[i]
 		}
 	}
-	return name
+	return nil
 }
 
 // parsePorcelain parses the output of `git worktree list --porcelain`.

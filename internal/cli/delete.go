@@ -4,12 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/davidmks/sarj/internal/config"
 	"github.com/davidmks/sarj/internal/exec"
-	"github.com/davidmks/sarj/internal/git"
 	"github.com/davidmks/sarj/internal/tmux"
 	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/spf13/cobra"
@@ -26,46 +23,36 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			// Resolve from the main worktree so config and paths are
-			// correct even when invoked from inside a child worktree.
-			mainWt, err := git.MainWorktree(r)
-			if err != nil {
-				return err
-			}
-			repoName := filepath.Base(mainWt)
-
-			cfg, err := config.Load(mainWt, repoName)
-			if err != nil {
-				return err
-			}
-
-			if err := os.Chdir(mainWt); err != nil {
-				return fmt.Errorf("changing to main worktree: %w", err)
-			}
-
 			// Worktree metadata is unavailable after removal.
 			wts, err := worktree.List(r)
 			if err != nil {
 				return fmt.Errorf("listing worktrees: %w", err)
 			}
-			branchName := worktree.FindBranch(wts, cfg.WorktreeBase, name)
+
+			if err := os.Chdir(worktree.MainPath(wts)); err != nil {
+				return fmt.Errorf("changing to main worktree: %w", err)
+			}
+
+			wt := worktree.FindByName(wts, name)
+			if wt == nil {
+				return fmt.Errorf("worktree %s not found", name)
+			}
 
 			fmt.Fprintf(os.Stderr, "Removing worktree...\n")
 			if err := worktree.Delete(r, worktree.DeleteOpts{
-				WorktreeBase: cfg.WorktreeBase,
-				Name:         name,
-				Progress:     os.Stderr,
+				Path:     wt.Path,
+				Progress: os.Stderr,
 			}); err != nil {
 				return err
 			}
 
 			if !deleteBranch && !keepBranch {
-				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", branchName))
+				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", wt.Branch))
 			}
 
 			branchStatus := "branch kept"
 			if deleteBranch {
-				if _, err := r.Run("git", "branch", "-D", branchName); err != nil {
+				if _, err := r.Run("git", "branch", "-D", wt.Branch); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not delete branch: %v\n", err)
 				} else {
 					branchStatus = "branch deleted"

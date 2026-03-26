@@ -113,19 +113,21 @@ func setupSymlinks(r exec.Runner, w io.Writer, wtPath string, symlinks []string)
 
 // DeleteOpts holds options for deleting a worktree.
 type DeleteOpts struct {
-	WorktreeBase string
-	Name         string
-	Progress     io.Writer
+	Path     string
+	Progress io.Writer
 }
 
 // Delete removes a worktree and prunes stale references.
+// If the worktree directory is already gone, it prunes the stale entry instead.
 // Branch deletion is handled by the CLI layer (may require user prompt).
 func Delete(r exec.Runner, opts DeleteOpts) error {
 	w := progressWriter(opts.Progress)
-	wtPath := filepath.Join(opts.WorktreeBase, DirName(opts.Name))
+	name := filepath.Base(opts.Path)
 
-	if _, err := r.Run("git", "worktree", "remove", "--force", wtPath); err != nil {
-		return fmt.Errorf("removing worktree %s: %w", opts.Name, err)
+	if _, err := os.Stat(opts.Path); os.IsNotExist(err) {
+		progress(w, "warning: directory already removed, pruning stale entry\n")
+	} else if _, err := r.Run("git", "worktree", "remove", "--force", opts.Path); err != nil {
+		return fmt.Errorf("removing worktree %s: %w", name, err)
 	}
 
 	if _, err := r.Run("git", "worktree", "prune"); err != nil {

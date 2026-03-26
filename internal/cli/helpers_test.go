@@ -67,6 +67,13 @@ func saveCwd(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(dir) })
 }
 
+// fakeWorktreeDir creates a directory at the given path so Delete's os.Stat
+// finds it during tests.
+func fakeWorktreeDir(t *testing.T, path string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(path, 0o750))
+}
+
 // newRepoDir creates a temp dir with minimal config so config.Load succeeds.
 // worktree_base is set via local config because project-level merge does not
 // override it from the global default.

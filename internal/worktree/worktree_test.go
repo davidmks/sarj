@@ -316,12 +316,14 @@ func TestCreate_FetchFailsFallsBackToLocal(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	wtBase := t.TempDir()
+	wtPath := filepath.Join(t.TempDir(), "my-feature")
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree": {},
 	}}
 
-	err := worktree.Delete(r, worktree.DeleteOpts{WorktreeBase: wtBase, Name: "my-feature"})
+	err := worktree.Delete(r, worktree.DeleteOpts{Path: wtPath})
 
 	require.NoError(t, err)
 	assert.True(t, r.hasCall("worktree remove"))
@@ -329,15 +331,31 @@ func TestDelete(t *testing.T) {
 }
 
 func TestDelete_RemoveFails(t *testing.T) {
-	wtBase := t.TempDir()
+	wtPath := filepath.Join(t.TempDir(), "locked-wt")
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree remove": {err: fmt.Errorf("locked")},
 	}}
 
-	err := worktree.Delete(r, worktree.DeleteOpts{WorktreeBase: wtBase, Name: "locked-wt"})
+	err := worktree.Delete(r, worktree.DeleteOpts{Path: wtPath})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "removing worktree")
+}
+
+func TestDelete_StaleEntry(t *testing.T) {
+	wtPath := filepath.Join(t.TempDir(), "gone-wt")
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree": {},
+	}}
+
+	err := worktree.Delete(r, worktree.DeleteOpts{Path: wtPath})
+
+	require.NoError(t, err)
+	assert.False(t, r.hasCall("worktree remove"), "should skip remove for missing directory")
+	assert.True(t, r.hasCall("worktree prune"))
 }
 
 func TestList_Error(t *testing.T) {
