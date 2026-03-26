@@ -43,6 +43,13 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 				return fmt.Errorf("changing to main worktree: %w", err)
 			}
 
+			// Worktree metadata is unavailable after removal.
+			wts, err := worktree.List(r)
+			if err != nil {
+				return fmt.Errorf("listing worktrees: %w", err)
+			}
+			branchName := worktree.FindBranch(wts, cfg.WorktreeBase, name)
+
 			fmt.Fprintf(os.Stderr, "Removing worktree...\n")
 			if err := worktree.Delete(r, worktree.DeleteOpts{
 				WorktreeBase: cfg.WorktreeBase,
@@ -53,12 +60,12 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 			}
 
 			if !deleteBranch && !keepBranch {
-				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", name))
+				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", branchName))
 			}
 
 			branchStatus := "branch kept"
 			if deleteBranch {
-				if _, err := r.Run("git", "branch", "-D", name); err != nil {
+				if _, err := r.Run("git", "branch", "-D", branchName); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not delete branch: %v\n", err)
 				} else {
 					branchStatus = "branch deleted"

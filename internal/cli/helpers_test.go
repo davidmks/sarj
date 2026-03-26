@@ -67,15 +67,20 @@ func saveCwd(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(dir) })
 }
 
-// newRepoDir creates a temp dir with a minimal .sarj.toml so config.Load succeeds.
+// newRepoDir creates a temp dir with minimal config so config.Load succeeds.
+// worktree_base is set via local config because project-level merge does not
+// override it from the global default.
 func newRepoDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	wtBase := filepath.Join(dir, "wt")
 	require.NoError(t, os.MkdirAll(wtBase, 0o750))
 
-	cfg := fmt.Sprintf("worktree_base = %q\ndefault_branch = \"main\"\n", wtBase)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"), []byte(cfg), 0o600))
+	proj := "default_branch = \"main\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"), []byte(proj), 0o600))
+
+	local := fmt.Sprintf("worktree_base = %q\n", wtBase)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.local.toml"), []byte(local), 0o600))
 
 	return dir
 }

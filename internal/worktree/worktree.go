@@ -17,6 +17,12 @@ import (
 // ErrWorktreeExists is returned when a worktree directory already exists.
 var ErrWorktreeExists = errors.New("worktree already exists")
 
+// DirName returns the directory name used for a worktree, replacing slashes
+// with dashes so branch-style names like "fix/foo" become "fix-foo".
+func DirName(name string) string {
+	return strings.ReplaceAll(name, "/", "-")
+}
+
 // Worktree represents a single git worktree entry.
 type Worktree struct {
 	Path   string
@@ -44,8 +50,7 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 	}
 
 	w := progressWriter(opts.Progress)
-	dirName := strings.ReplaceAll(opts.Name, "/", "-")
-	wtPath := filepath.Join(cfg.WorktreeBase, dirName)
+	wtPath := filepath.Join(cfg.WorktreeBase, DirName(opts.Name))
 
 	if _, err := os.Stat(wtPath); err == nil {
 		return nil, fmt.Errorf("%w: %s", ErrWorktreeExists, wtPath)
@@ -117,8 +122,7 @@ type DeleteOpts struct {
 // Branch deletion is handled by the CLI layer (may require user prompt).
 func Delete(r exec.Runner, opts DeleteOpts) error {
 	w := progressWriter(opts.Progress)
-	dirName := strings.ReplaceAll(opts.Name, "/", "-")
-	wtPath := filepath.Join(opts.WorktreeBase, dirName)
+	wtPath := filepath.Join(opts.WorktreeBase, DirName(opts.Name))
 
 	if _, err := r.Run("git", "worktree", "remove", "--force", wtPath); err != nil {
 		return fmt.Errorf("removing worktree %s: %w", opts.Name, err)
