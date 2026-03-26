@@ -40,18 +40,31 @@ func (f *fakeRunner) RunInteractive(_ string, _ ...string) error {
 }
 
 func (f *fakeRunner) hasCall(substr string) bool {
-	for _, c := range f.calls {
+	return f.indexOfCall(substr) >= 0
+}
+
+func (f *fakeRunner) indexOfCall(substr string) int {
+	for i, c := range f.calls {
 		if strings.Contains(c, substr) {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 // isolateConfig prevents tests from loading the user's real global config.
 func isolateConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+}
+
+// saveCwd saves the current working directory and restores it when the test finishes.
+// Needed because the delete command calls os.Chdir which is process-global.
+func saveCwd(t *testing.T) {
+	t.Helper()
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(dir) })
 }
 
 // newRepoDir creates a temp dir with a minimal .sarj.toml so config.Load succeeds.

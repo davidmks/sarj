@@ -142,6 +142,29 @@ func KillSession(r exec.Runner, name string) error {
 	return nil
 }
 
+// CurrentSessionName returns the name of the tmux session that the current
+// process is running in. Returns "" if not inside tmux or on error.
+func CurrentSessionName(r exec.Runner) string {
+	if !IsInsideSession() {
+		return ""
+	}
+	out, err := r.Run("tmux", "display-message", "-p", "#{session_name}")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out)
+}
+
+// SwitchToLastSession switches the tmux client to the previous session.
+// Returns an error if there is no previous session to switch to.
+func SwitchToLastSession(r exec.Runner) error {
+	_, err := r.Run("tmux", "switch-client", "-l")
+	if err != nil {
+		return fmt.Errorf("switching to last session: %w", err)
+	}
+	return nil
+}
+
 // Connect connects to a tmux session. If already inside tmux, it
 // switches the client; otherwise it attaches.
 func Connect(r exec.Runner, name string) error {

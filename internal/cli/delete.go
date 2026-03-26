@@ -26,20 +26,21 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
-			repoRoot, err := git.RepoRoot(r)
+			// Resolve from the main worktree so config and paths are
+			// correct even when invoked from inside a child worktree.
+			mainWt, err := git.MainWorktree(r)
 			if err != nil {
 				return err
 			}
-			repoName := filepath.Base(repoRoot)
+			repoName := filepath.Base(mainWt)
 
-			cfg, err := config.Load(repoRoot, repoName)
+			cfg, err := config.Load(mainWt, repoName)
 			if err != nil {
 				return err
 			}
 
-			fmt.Fprintf(os.Stderr, "Stopping tmux session...\n")
-			if err := tmux.KillSession(r, name); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not kill tmux session: %v\n", err)
+			if err := os.Chdir(mainWt); err != nil {
+				return fmt.Errorf("changing to main worktree: %w", err)
 			}
 
 			fmt.Fprintf(os.Stderr, "Removing worktree...\n")
@@ -65,6 +66,18 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", name, branchStatus) //nolint:errcheck
+
+			// Session kill is last — it sends SIGHUP to the current process when
+			// run from inside the target session. All cleanup is already done above,
+			// so if the switch fails (no other session) the kill just closes the terminal.
+			sessionName := tmux.SanitizeName(name)
+			if tmux.IsInsideSession() && tmux.CurrentSessionName(r) == sessionName {
+				_ = tmux.SwitchToLastSession(r)
+			}
+			if err := tmux.KillSession(r, name); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not kill tmux session: %v\n", err)
+			}
+
 			return nil
 		},
 	}
