@@ -312,6 +312,48 @@ func TestListSessions(t *testing.T) {
 	})
 }
 
+func TestCurrentSessionName(t *testing.T) {
+	t.Run("returns session name", func(t *testing.T) {
+		t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+		r := &fakeRunner{responses: map[string]response{
+			"tmux display-message -p #{session_name}": {out: "my-session"},
+		}}
+		assert.Equal(t, "my-session", tmux.CurrentSessionName(r))
+	})
+
+	t.Run("empty when outside tmux", func(t *testing.T) {
+		t.Setenv("TMUX", "")
+		r := &fakeRunner{}
+		assert.Equal(t, "", tmux.CurrentSessionName(r))
+	})
+
+	t.Run("empty on error", func(t *testing.T) {
+		t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+		r := &fakeRunner{responses: map[string]response{
+			"tmux display-message -p #{session_name}": {err: fmt.Errorf("failed")},
+		}}
+		assert.Equal(t, "", tmux.CurrentSessionName(r))
+	})
+}
+
+func TestSwitchToLastSession(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		r := &fakeRunner{responses: map[string]response{}}
+		err := tmux.SwitchToLastSession(r)
+		require.NoError(t, err)
+		assert.True(t, r.hasCall("switch-client -l"))
+	})
+
+	t.Run("error when no previous session", func(t *testing.T) {
+		r := &fakeRunner{responses: map[string]response{
+			"tmux switch-client -l": {err: fmt.Errorf("no last session")},
+		}}
+		err := tmux.SwitchToLastSession(r)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "switching to last session")
+	})
+}
+
 func TestBuildCommand(t *testing.T) {
 	tests := []struct {
 		name    string

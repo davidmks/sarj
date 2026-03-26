@@ -192,11 +192,12 @@ func TestCreateCmd(t *testing.T) {
 	isolateConfig(t)
 	dir := newRepoDir(t)
 
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
 	r := &fakeRunner{responses: map[string]response{
-		"git rev-parse": {out: dir},
-		"git fetch":     {},
-		"git show-ref":  {err: fmt.Errorf("not found")},
-		"git worktree":  {},
+		"git worktree list --porcelain": {out: porcelain},
+		"git fetch":                     {},
+		"git show-ref":                  {err: fmt.Errorf("not found")},
+		"git worktree":                  {},
 	}}
 
 	cmd := cli.NewRootCmd("test", r)
@@ -212,11 +213,12 @@ func TestCreateCmd_Error(t *testing.T) {
 	isolateConfig(t)
 	dir := newRepoDir(t)
 
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
 	r := &fakeRunner{responses: map[string]response{
-		"git rev-parse":    {out: dir},
-		"git fetch":        {},
-		"git show-ref":     {err: fmt.Errorf("not found")},
-		"git worktree add": {err: fmt.Errorf("fatal: could not create")},
+		"git worktree list --porcelain": {out: porcelain},
+		"git fetch":                     {},
+		"git show-ref":                  {err: fmt.Errorf("not found")},
+		"git worktree add":              {err: fmt.Errorf("fatal: could not create")},
 	}}
 
 	cmd := cli.NewRootCmd("test", r)
@@ -227,12 +229,14 @@ func TestCreateCmd_Error(t *testing.T) {
 
 func TestDeleteCmd_KeepBranch(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
 	r := &fakeRunner{responses: map[string]response{
-		"git rev-parse":    {out: dir},
-		"tmux has-session": {err: fmt.Errorf("no session")},
-		"git worktree":     {},
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
 	}}
 
 	cmd := cli.NewRootCmd("test", r)
@@ -247,13 +251,15 @@ func TestDeleteCmd_KeepBranch(t *testing.T) {
 
 func TestDeleteCmd_DeleteBranch(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
 	r := &fakeRunner{responses: map[string]response{
-		"git rev-parse":    {out: dir},
-		"tmux has-session": {err: fmt.Errorf("no session")},
-		"git worktree":     {},
-		"git branch":       {},
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"git branch":                    {},
 	}}
 
 	cmd := cli.NewRootCmd("test", r)
@@ -264,4 +270,106 @@ func TestDeleteCmd_DeleteBranch(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), "branch deleted")
 	assert.True(t, r.hasCall("branch -D"))
+}
+
+func TestDeleteCmd_CleanupBeforeKill(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {},
+		"git worktree":                  {},
+		"git branch":                    {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"delete", "my-feature", "-D"})
+
+	require.NoError(t, cmd.Execute())
+
+	wtRemove := r.indexOfCall("worktree remove")
+	branchDelete := r.indexOfCall("branch -D")
+	sessionKill := r.indexOfCall("kill-session")
+
+	assert.Greater(t, wtRemove, -1, "worktree remove should be called")
+	assert.Greater(t, branchDelete, -1, "branch -D should be called")
+	assert.Greater(t, sessionKill, -1, "kill-session should be called")
+	assert.Less(t, wtRemove, sessionKill, "worktree remove must happen before kill-session")
+	assert.Less(t, branchDelete, sessionKill, "branch delete must happen before kill-session")
+}
+
+func TestDeleteCmd_SwitchesAwayBeforeKill(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain":           {out: porcelain},
+		"tmux has-session":                        {},
+		"tmux display-message -p #{session_name}": {out: "my-feature"},
+		"tmux switch-client -l":                   {},
+		"git worktree":                            {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "my-feature", "--keep-branch"})
+
+	require.NoError(t, cmd.Execute())
+
+	switchClient := r.indexOfCall("switch-client -l")
+	sessionKill := r.indexOfCall("kill-session")
+
+	assert.Greater(t, switchClient, -1, "switch-client should be called")
+	assert.Less(t, switchClient, sessionKill, "switch must happen before kill")
+}
+
+func TestDeleteCmd_NoSwitchWhenOutsideTmux(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	t.Setenv("TMUX", "")
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "my-feature", "--keep-branch"})
+
+	require.NoError(t, cmd.Execute())
+	assert.False(t, r.hasCall("switch-client"))
+}
+
+func TestDeleteCmd_NoSwitchWhenDifferentSession(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain":           {out: porcelain},
+		"tmux has-session":                        {err: fmt.Errorf("no session")},
+		"tmux display-message -p #{session_name}": {out: "other-session"},
+		"git worktree":                            {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "my-feature", "--keep-branch"})
+
+	require.NoError(t, cmd.Execute())
+	assert.False(t, r.hasCall("switch-client"))
 }

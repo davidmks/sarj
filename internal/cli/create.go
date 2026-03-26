@@ -27,13 +27,13 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 				opts.Name = args[0]
 			}
 
-			repoRoot, err := git.RepoRoot(r)
+			mainWt, err := git.MainWorktree(r)
 			if err != nil {
 				return err
 			}
-			repoName := filepath.Base(repoRoot)
+			repoName := filepath.Base(mainWt)
 
-			cfg, err := config.Load(repoRoot, repoName)
+			cfg, err := config.Load(mainWt, repoName)
 			if err != nil {
 				return err
 			}
