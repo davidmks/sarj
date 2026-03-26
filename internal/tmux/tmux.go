@@ -11,10 +11,11 @@ import (
 	"github.com/davidmks/sarj/internal/exec"
 )
 
+var nameReplacer = strings.NewReplacer(".", "-", ":", "-")
+
 // SanitizeName replaces characters that tmux forbids in session names (. and :) with -.
 func SanitizeName(name string) string {
-	r := strings.NewReplacer(".", "-", ":", "-")
-	return r.Replace(name)
+	return nameReplacer.Replace(name)
 }
 
 // IsInstalled checks whether the tmux binary works (not just present in PATH).
@@ -30,7 +31,7 @@ func IsInsideSession() bool {
 
 // SessionExists checks whether a tmux session with the given name exists.
 func SessionExists(r exec.Runner, name string) bool {
-	_, err := r.Run("tmux", "has-session", "-t", name)
+	_, err := r.Run("tmux", "has-session", "-t", SanitizeName(name))
 	return err == nil
 }
 

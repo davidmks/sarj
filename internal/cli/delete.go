@@ -59,7 +59,7 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 				}
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", name, branchStatus) //nolint:errcheck
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", wt.Branch, branchStatus) //nolint:errcheck
 
 			// Session kill is last — it sends SIGHUP to the current process when
 			// run from inside the target session. All cleanup is already done above,

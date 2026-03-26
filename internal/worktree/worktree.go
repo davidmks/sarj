@@ -86,7 +86,7 @@ func Create(r exec.Runner, cfg *config.Config, opts CreateOpts) (*Worktree, erro
 
 	if !opts.SkipSetup && cfg.SetupCommand != "" {
 		progress(w, "Running setup command...\n")
-		cmd := fmt.Sprintf("cd %q && %s", wtPath, cfg.SetupCommand)
+		cmd := fmt.Sprintf("cd '%s' && %s", strings.ReplaceAll(wtPath, "'", "'\\''"), cfg.SetupCommand)
 		if err := r.RunInteractive("sh", "-c", cmd); err != nil {
 			return nil, fmt.Errorf("setup command failed: %w", err)
 		}
