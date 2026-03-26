@@ -58,6 +58,15 @@ func isolateConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 }
 
+// saveCwd saves the current working directory and restores it when the test finishes.
+// Needed because the delete command calls os.Chdir which is process-global.
+func saveCwd(t *testing.T) {
+	t.Helper()
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Chdir(dir) })
+}
+
 // newRepoDir creates a temp dir with a minimal .sarj.toml so config.Load succeeds.
 func newRepoDir(t *testing.T) string {
 	t.Helper()

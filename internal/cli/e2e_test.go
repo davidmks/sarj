@@ -76,10 +76,8 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 
 	// Simulate running from inside the target worktree — the bug scenario
 	// where CWD is deleted out from under the process.
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
+	saveCwd(t)
 	require.NoError(t, os.Chdir(wtPath))
-	t.Cleanup(func() { os.Chdir(origDir) })
 
 	cmd = cli.NewRootCmd("test", &exec.DefaultRunner{})
 	buf := new(bytes.Buffer)

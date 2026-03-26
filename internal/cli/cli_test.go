@@ -229,6 +229,7 @@ func TestCreateCmd_Error(t *testing.T) {
 
 func TestDeleteCmd_KeepBranch(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
@@ -250,6 +251,7 @@ func TestDeleteCmd_KeepBranch(t *testing.T) {
 
 func TestDeleteCmd_DeleteBranch(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
@@ -272,6 +274,7 @@ func TestDeleteCmd_DeleteBranch(t *testing.T) {
 
 func TestDeleteCmd_CleanupBeforeKill(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
@@ -302,6 +305,7 @@ func TestDeleteCmd_CleanupBeforeKill(t *testing.T) {
 
 func TestDeleteCmd_SwitchesAwayBeforeKill(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
 
@@ -329,6 +333,7 @@ func TestDeleteCmd_SwitchesAwayBeforeKill(t *testing.T) {
 
 func TestDeleteCmd_NoSwitchWhenOutsideTmux(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 	t.Setenv("TMUX", "")
 
@@ -349,6 +354,7 @@ func TestDeleteCmd_NoSwitchWhenOutsideTmux(t *testing.T) {
 
 func TestDeleteCmd_NoSwitchWhenDifferentSession(t *testing.T) {
 	isolateConfig(t)
+	saveCwd(t)
 	dir := newRepoDir(t)
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
 

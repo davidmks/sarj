@@ -67,8 +67,11 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", name, branchStatus) //nolint:errcheck
 
-			// Session kill is last — it sends SIGHUP when run from inside the target session
-			if tmux.IsInsideSession() && tmux.CurrentSessionName(r) == tmux.SanitizeName(name) {
+			// Session kill is last — it sends SIGHUP to the current process when
+			// run from inside the target session. All cleanup is already done above,
+			// so if the switch fails (no other session) the kill just closes the terminal.
+			sessionName := tmux.SanitizeName(name)
+			if tmux.IsInsideSession() && tmux.CurrentSessionName(r) == sessionName {
 				_ = tmux.SwitchToLastSession(r)
 			}
 			if err := tmux.KillSession(r, name); err != nil {
