@@ -118,6 +118,13 @@ func TestSessionExists(t *testing.T) {
 		}}
 		assert.False(t, tmux.SessionExists(r, "my-session"))
 	})
+
+	t.Run("sanitizes name", func(t *testing.T) {
+		r := &fakeRunner{responses: map[string]response{
+			"tmux has-session -t feat-v2": {},
+		}}
+		assert.True(t, tmux.SessionExists(r, "feat.v2"))
+	})
 }
 
 func TestCreateSession_SingleWindow(t *testing.T) {
