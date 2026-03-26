@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/davidmks/sarj/internal/exec"
@@ -15,6 +16,19 @@ func List(r exec.Runner) ([]Worktree, error) {
 	}
 
 	return parsePorcelain(out), nil
+}
+
+// FindBranch returns the branch checked out in the named worktree.
+// Returns the worktree name itself if no match is found or the worktree is in
+// detached HEAD state.
+func FindBranch(wts []Worktree, wtBase, name string) string {
+	wtPath := filepath.Join(wtBase, DirName(name))
+	for _, wt := range wts {
+		if wt.Path == wtPath && wt.Branch != "" {
+			return wt.Branch
+		}
+	}
+	return name
 }
 
 // parsePorcelain parses the output of `git worktree list --porcelain`.
