@@ -177,7 +177,7 @@ func TestCreateSession_WithPanes(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t my-session:dev clear && nvim . Enter"))
-	assert.True(t, r.hasCall("split-window -h -t my-session:dev -c /work/repo -p 30"))
+	assert.True(t, r.hasCall("split-window -h -t my-session:dev -c /work/repo -l 30%"))
 	assert.True(t, r.hasCall("send-keys -t my-session:dev clear && make watch Enter"))
 }
 

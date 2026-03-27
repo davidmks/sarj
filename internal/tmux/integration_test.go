@@ -93,6 +93,34 @@ func TestIntegration_ListSessions(t *testing.T) {
 	assert.Contains(t, sessions, sessionName)
 }
 
+func TestIntegration_SessionWithPaneSizes(t *testing.T) {
+	requireTmux(t)
+	r := &exec.DefaultRunner{}
+
+	sessionName := "sarj-test-pane-sizes"
+	t.Cleanup(func() {
+		tmux.KillSession(r, sessionName)
+	})
+
+	windows := []config.WindowConfig{
+		{
+			Name: "dev",
+			Panes: []config.PaneConfig{
+				{Command: "echo pane1"},
+				{Command: "echo pane2", Split: "horizontal", Size: 30},
+			},
+		},
+	}
+
+	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows)
+	require.NoError(t, err)
+
+	out, err := r.Run("tmux", "list-panes", "-t", sessionName+":dev", "-F", "#{pane_index}")
+	require.NoError(t, err)
+	assert.Contains(t, out, "0")
+	assert.Contains(t, out, "1")
+}
+
 func TestIntegration_KillNonexistentSession(t *testing.T) {
 	requireTmux(t)
 	r := &exec.DefaultRunner{}
