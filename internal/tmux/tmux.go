@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/davidmks/sarj/internal/config"
@@ -72,9 +73,25 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 		}
 	}
 
-	// Land the user on the first window
-	if _, err := r.Run("tmux", "select-window", "-t", name+":"+first.Name); err != nil {
-		return fmt.Errorf("selecting first window: %w", err)
+	baseIdx := paneBaseIndex(r)
+
+	for _, w := range windows {
+		if idx, ok := focusedPaneIndex(w); ok {
+			target := fmt.Sprintf("%s:%s.%d", name, w.Name, idx+baseIdx)
+			if _, err := r.Run("tmux", "select-pane", "-t", target); err != nil {
+				return fmt.Errorf("selecting pane in window %s: %w", w.Name, err)
+			}
+		}
+	}
+
+	focusWindow := first.Name
+	for _, w := range windows {
+		if w.Focus {
+			focusWindow = w.Name
+		}
+	}
+	if _, err := r.Run("tmux", "select-window", "-t", name+":"+focusWindow); err != nil {
+		return fmt.Errorf("selecting window: %w", err)
 	}
 
 	return nil
@@ -130,6 +147,38 @@ func createPanes(r exec.Runner, session string, w config.WindowConfig, path stri
 	}
 
 	return nil
+}
+
+// paneBaseIndex returns the tmux pane-base-index setting.
+// Falls back to 0 (the tmux default) if the option cannot be read.
+func paneBaseIndex(r exec.Runner) int {
+	out, err := r.Run("tmux", "show-option", "-gv", "pane-base-index")
+	if err != nil {
+		return 0
+	}
+	idx, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0
+	}
+	return idx
+}
+
+// focusedPaneIndex returns the index of the last pane with Focus set in a window.
+// Returns false when no pane needs explicit focus (zero or one pane, or no focus set).
+func focusedPaneIndex(w config.WindowConfig) (int, bool) {
+	if len(w.Panes) <= 1 {
+		return 0, false
+	}
+	idx := -1
+	for i, p := range w.Panes {
+		if p.Focus {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return 0, false
+	}
+	return idx, true
 }
 
 // KillSession destroys a tmux session. Returns nil if the session doesn't exist.
