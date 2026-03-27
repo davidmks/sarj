@@ -115,7 +115,7 @@ func createPanes(r exec.Runner, session string, w config.WindowConfig, path stri
 
 		splitArgs := []string{"split-window", splitFlag, "-t", target, "-c", path}
 		if p.Size > 0 {
-			splitArgs = append(splitArgs, "-p", fmt.Sprintf("%d", p.Size))
+			splitArgs = append(splitArgs, "-l", fmt.Sprintf("%d%%", p.Size))
 		}
 
 		if _, err := r.Run("tmux", splitArgs...); err != nil {
