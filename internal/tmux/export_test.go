@@ -1,4 +1,6 @@
 package tmux
 
-var FocusedPaneIndex = focusedPaneIndex
-var PaneBaseIndex = paneBaseIndex
+var (
+	FocusedPaneIndex = focusedPaneIndex
+	PaneBaseIndex    = paneBaseIndex
+)
