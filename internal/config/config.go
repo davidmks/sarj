@@ -36,6 +36,7 @@ type WindowConfig struct {
 	EnvFile string            `toml:"env_file"`
 	Env     map[string]string `toml:"env"`
 	Panes   []PaneConfig      `toml:"panes"`
+	Focus   bool              `toml:"focus"`
 }
 
 // PaneConfig describes a split within a tmux window.
@@ -44,6 +45,7 @@ type PaneConfig struct {
 	Command string `toml:"command"`
 	Split   string `toml:"split"` // "horizontal" or "vertical" (default: vertical)
 	Size    int    `toml:"size"`  // percentage (default: 50)
+	Focus   bool   `toml:"focus"`
 }
 
 // Defaults returns a Config with sensible zero-config defaults.

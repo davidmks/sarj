@@ -76,6 +76,38 @@ func TestIntegration_SessionWithPanes(t *testing.T) {
 	assert.Contains(t, out, "1")
 }
 
+func TestIntegration_Focus(t *testing.T) {
+	requireTmux(t)
+	r := &exec.DefaultRunner{}
+
+	sessionName := "sarj-test-focus"
+	t.Cleanup(func() {
+		tmux.KillSession(r, sessionName)
+	})
+
+	windows := []config.WindowConfig{
+		{
+			Name: "dev",
+			Panes: []config.PaneConfig{
+				{Command: "echo pane0", Focus: true},
+				{Command: "echo pane1", Split: "horizontal"},
+			},
+		},
+		{Name: "shell", Focus: true},
+	}
+
+	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows)
+	require.NoError(t, err)
+
+	activeWindow, err := r.Run("tmux", "display-message", "-t", sessionName, "-p", "#{window_name}")
+	require.NoError(t, err)
+	assert.Equal(t, "shell", activeWindow)
+
+	activePane, err := r.Run("tmux", "display-message", "-t", sessionName+":dev", "-p", "#{pane_index}")
+	require.NoError(t, err)
+	assert.Equal(t, "0", activePane)
+}
+
 func TestIntegration_ListSessions(t *testing.T) {
 	requireTmux(t)
 	r := &exec.DefaultRunner{}
