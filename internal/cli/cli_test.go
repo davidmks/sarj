@@ -493,6 +493,136 @@ func TestDeleteCmd_NoSwitchWhenOutsideTmux(t *testing.T) {
 	assert.False(t, r.hasCall("switch-client"))
 }
 
+func TestDeleteCmd_InferFromCwd(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir, err := filepath.EvalSymlinks(newRepoDir(t))
+	require.NoError(t, err)
+	wtBase, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	wtPath := filepath.Join(wtBase, "my-feature")
+	fakeWorktreeDir(t, wtPath)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+	}}
+
+	require.NoError(t, os.Chdir(wtPath))
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetIn(strings.NewReader("y\n"))
+	cmd.SetArgs([]string{"delete", "--keep-branch"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "my-feature")
+	assert.True(t, r.hasCall("worktree remove"))
+}
+
+func TestDeleteCmd_InferFromCwd_Decline(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir, err := filepath.EvalSymlinks(newRepoDir(t))
+	require.NoError(t, err)
+	wtBase, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	wtPath := filepath.Join(wtBase, "my-feature")
+	fakeWorktreeDir(t, wtPath)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	require.NoError(t, os.Chdir(wtPath))
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetIn(strings.NewReader("n\n"))
+	cmd.SetArgs([]string{"delete", "--keep-branch"})
+
+	require.NoError(t, cmd.Execute())
+	assert.False(t, r.hasCall("worktree remove"))
+}
+
+func TestDeleteCmd_InferFromCwd_Subdirectory(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir, err := filepath.EvalSymlinks(newRepoDir(t))
+	require.NoError(t, err)
+	wtBase, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	wtPath := filepath.Join(wtBase, "my-feature")
+	subdir := filepath.Join(wtPath, "src", "pkg")
+	fakeWorktreeDir(t, subdir)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+	}}
+
+	require.NoError(t, os.Chdir(subdir))
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetIn(strings.NewReader("y\n"))
+	cmd.SetArgs([]string{"delete", "--keep-branch"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "my-feature")
+	assert.True(t, r.hasCall("worktree remove"))
+}
+
+func TestDeleteCmd_InferFromCwd_MainWorktree(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir, err := filepath.EvalSymlinks(newRepoDir(t))
+	require.NoError(t, err)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	require.NoError(t, os.Chdir(dir))
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"delete", "--keep-branch"})
+
+	err = cmd.Execute()
+	assert.ErrorContains(t, err, "cannot delete the main worktree")
+}
+
+func TestDeleteCmd_InferFromCwd_NotInWorktree(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	outside := t.TempDir()
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	require.NoError(t, os.Chdir(outside))
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"delete", "--keep-branch"})
+
+	err := cmd.Execute()
+	assert.ErrorContains(t, err, "not inside a worktree")
+}
+
 func TestDeleteCmd_NoSwitchWhenDifferentSession(t *testing.T) {
 	isolateConfig(t)
 	saveCwd(t)
