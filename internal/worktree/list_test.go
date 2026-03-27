@@ -4,7 +4,65 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestFindByPath(t *testing.T) {
+	wts := []Worktree{
+		{Path: "/home/user/repo", Branch: "main"},
+		{Path: "/home/user/wt/foo", Branch: "foo"},
+	}
+
+	tests := []struct {
+		name       string
+		path       string
+		wantBranch string
+		wantNil    bool
+	}{
+		{
+			name:       "exact match on linked worktree",
+			path:       "/home/user/wt/foo",
+			wantBranch: "foo",
+		},
+		{
+			name:       "subdirectory of linked worktree",
+			path:       "/home/user/wt/foo/src/pkg",
+			wantBranch: "foo",
+		},
+		{
+			name:       "exact match on main worktree",
+			path:       "/home/user/repo",
+			wantBranch: "main",
+		},
+		{
+			name:       "subdirectory of main worktree",
+			path:       "/home/user/repo/cmd",
+			wantBranch: "main",
+		},
+		{
+			name:    "outside all worktrees",
+			path:    "/other/dir",
+			wantNil: true,
+		},
+		{
+			name:    "partial prefix mismatch",
+			path:    "/home/user/wt/foobar",
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FindByPath(wts, tt.path)
+			if tt.wantNil {
+				assert.Nil(t, got)
+			} else {
+				require.NotNil(t, got)
+				assert.Equal(t, tt.wantBranch, got.Branch)
+			}
+		})
+	}
+}
 
 func TestParsePorcelain(t *testing.T) {
 	tests := []struct {

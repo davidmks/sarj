@@ -39,6 +39,21 @@ func FindByName(wts []Worktree, name string) *Worktree {
 	return nil
 }
 
+// FindByPath returns the worktree that contains the given absolute path.
+// A path is "inside" a worktree if it equals or is a subdirectory of the
+// worktree root. Returns nil if no match is found.
+func FindByPath(wts []Worktree, path string) *Worktree {
+	path = filepath.Clean(path)
+	for i := range wts {
+		wtPath := filepath.Clean(wts[i].Path)
+		rel, err := filepath.Rel(wtPath, path)
+		if err == nil && !strings.HasPrefix(rel, "..") {
+			return &wts[i]
+		}
+	}
+	return nil
+}
+
 // parsePorcelain parses the output of `git worktree list --porcelain`.
 // Each worktree entry is separated by a blank line.
 func parsePorcelain(output string) []Worktree {
