@@ -123,6 +123,31 @@ command = "make test-watch"
 split = "horizontal"
 ```
 
+Use `focus = true` to control which window is active on attach (defaults to the first window):
+
+```toml
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+
+[[tmux.windows]]
+name = "shell"
+focus = true
+```
+
+Panes support `focus` too — select a specific pane instead of the last one created:
+
+```toml
+[[tmux.windows.panes]]
+command = "nvim ."
+focus = true
+
+[[tmux.windows.panes]]
+command = "make watch"
+split = "horizontal"
+size = 30
+```
+
 ### Per-project: `.sarj.toml`
 
 Team-shared settings — setup command, symlinks, default branch, tmux windows.

@@ -28,6 +28,7 @@ make fmt # gofumpt -w .
 - Separate `func TestFoo` functions when setup or assertions diverge per case
 - If the table struct needs `setup func()` or `verify func()` fields, break it into separate tests
 - Integration tests (`//go:build integration`) are few and focused — test real component boundaries, not logic already covered by unit tests
+- Use `export_test.go` (in the package under test) to expose unexported pure functions for direct testing from external test packages
 
 ## Workflow
 
