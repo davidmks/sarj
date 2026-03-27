@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/davidmks/sarj/internal/exec"
@@ -17,25 +18,30 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 	var keepBranch bool
 
 	cmd := &cobra.Command{
-		Use:   "delete <name>",
+		Use:   "delete [name]",
 		Short: "Remove a worktree and optionally its branch",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
+			in := bufio.NewReader(cmd.InOrStdin())
 
-			// Worktree metadata is unavailable after removal.
 			wts, err := worktree.List(r)
 			if err != nil {
 				return fmt.Errorf("listing worktrees: %w", err)
 			}
 
-			if err := os.Chdir(worktree.MainPath(wts)); err != nil {
-				return fmt.Errorf("changing to main worktree: %w", err)
+			target, err := resolveWorktree(wts, args)
+			if err != nil {
+				return err
 			}
 
-			wt := worktree.FindByName(wts, name)
-			if wt == nil {
-				return fmt.Errorf("worktree %s not found", name)
+			wt, name := target.wt, target.name
+
+			if target.confirm && !promptYesNo(fmt.Sprintf("Delete worktree '%s'?", name), in) {
+				return nil
+			}
+
+			if err := os.Chdir(worktree.MainPath(wts)); err != nil {
+				return fmt.Errorf("changing to main worktree: %w", err)
 			}
 
 			fmt.Fprintf(os.Stderr, "Removing worktree...\n")
@@ -47,7 +53,7 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 			}
 
 			if !deleteBranch && !keepBranch {
-				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", wt.Branch))
+				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", wt.Branch), in)
 			}
 
 			branchStatus := "branch kept"
@@ -85,10 +91,46 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 	return cmd
 }
 
-// promptYesNo asks a y/N question on stderr and reads from stdin. Default is no.
-func promptYesNo(question string) bool {
+type deleteTarget struct {
+	wt      *worktree.Worktree
+	name    string
+	confirm bool
+}
+
+// resolveWorktree resolves the target worktree from an explicit name or the
+// current working directory. When inferred from cwd, confirm is true so the
+// caller can prompt before proceeding.
+func resolveWorktree(wts []worktree.Worktree, args []string) (deleteTarget, error) {
+	if len(args) == 1 {
+		name := args[0]
+		wt := worktree.FindByName(wts, name)
+		if wt == nil {
+			return deleteTarget{}, fmt.Errorf("worktree %s not found", name)
+		}
+		return deleteTarget{wt: wt, name: name}, nil
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return deleteTarget{}, fmt.Errorf("getting current directory: %w", err)
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return deleteTarget{}, fmt.Errorf("resolving current directory: %w", err)
+	}
+	wt := worktree.FindByPath(wts, cwd)
+	if wt == nil {
+		return deleteTarget{}, fmt.Errorf("current directory is not inside a worktree")
+	}
+	if wt.Path == worktree.MainPath(wts) {
+		return deleteTarget{}, fmt.Errorf("cannot delete the main worktree")
+	}
+	return deleteTarget{wt: wt, name: filepath.Base(wt.Path), confirm: true}, nil
+}
+
+// promptYesNo asks a y/N question on stderr and reads from in. Default is no.
+func promptYesNo(question string, in *bufio.Reader) bool {
 	fmt.Fprintf(os.Stderr, "%s (y/N) ", question)
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
+	answer, _ := in.ReadString('\n')
 	return strings.TrimSpace(strings.ToLower(answer)) == "y"
 }
