@@ -66,19 +66,19 @@ func TestFindByPath(t *testing.T) {
 
 func TestParsePorcelain(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		want   []Worktree
+		name  string
+		input string
+		want  []Worktree
 	}{
 		{
-			name: "single main worktree",
+			name:  "single main worktree",
 			input: "worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main\n\n",
 			want: []Worktree{
 				{Path: "/home/user/repo", Branch: "main", HEAD: "abc123"},
 			},
 		},
 		{
-			name: "multiple worktrees",
+			name:  "multiple worktrees",
 			input: "worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /home/user/wt/feature\nHEAD def456\nbranch refs/heads/feature\n\n",
 			want: []Worktree{
 				{Path: "/home/user/repo", Branch: "main", HEAD: "abc123"},
@@ -86,7 +86,7 @@ func TestParsePorcelain(t *testing.T) {
 			},
 		},
 		{
-			name: "bare repo",
+			name:  "bare repo",
 			input: "worktree /home/user/repo.git\nHEAD abc123\nbare\n\n",
 			want: []Worktree{
 				{Path: "/home/user/repo.git", HEAD: "abc123", Bare: true},
