@@ -234,6 +234,36 @@ func TestLoadWithPaths_InvalidLocalToml(t *testing.T) {
 	assert.Contains(t, err.Error(), "loading local config")
 }
 
+func TestLoadWithPaths_Focus(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.project, `
+[[tmux.windows]]
+name = "terminal"
+
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+focus = true
+
+[[tmux.windows.panes]]
+command = "nvim ."
+
+[[tmux.windows.panes]]
+command = "make watch"
+split = "horizontal"
+focus = true
+`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.False(t, cfg.Tmux.Windows[0].Focus)
+	assert.True(t, cfg.Tmux.Windows[1].Focus)
+	assert.False(t, cfg.Tmux.Windows[1].Panes[0].Focus)
+	assert.True(t, cfg.Tmux.Windows[1].Panes[1].Focus)
+}
+
 func TestLoadWithPaths_InvalidPaneSplit(t *testing.T) {
 	p := newTestPaths(t)
 
