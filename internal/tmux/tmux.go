@@ -46,6 +46,10 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 		windows = []config.WindowConfig{{Name: "terminal"}}
 	}
 
+	// Query pane-base-index up front so no tmux round-trip sits between
+	// the last send-keys and select-window.
+	baseIdx := paneBaseIndex(r)
+
 	first := windows[0]
 	args := []string{"new-session", "-d", "-s", name, "-c", path, "-n", first.Name}
 	if _, err := r.Run("tmux", args...); err != nil {
@@ -72,8 +76,6 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 			return err
 		}
 	}
-
-	baseIdx := paneBaseIndex(r)
 
 	for _, w := range windows {
 		if idx, ok := focusedPaneIndex(w); ok {
