@@ -1,7 +1,9 @@
 package worktree
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -14,7 +16,7 @@ func CreateSymlinks(mainRepo, wtPath string, links []string) error {
 		dst := filepath.Join(wtPath, link)
 
 		// Skip if source doesn't exist in main repo
-		if _, err := os.Stat(src); os.IsNotExist(err) {
+		if _, err := os.Stat(src); errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 
