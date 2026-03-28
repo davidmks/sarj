@@ -268,7 +268,7 @@ func BuildCommand(envFile string, env map[string]string, command, args string) s
 		}
 		sort.Strings(keys)
 
-		var exports []string
+		exports := make([]string, 0, len(keys))
 		for _, k := range keys {
 			exports = append(exports, fmt.Sprintf("%s=%s", k, shellQuote(env[k])))
 		}
