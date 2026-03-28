@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,7 +125,7 @@ func Delete(r exec.Runner, opts DeleteOpts) error {
 	w := progressWriter(opts.Progress)
 	name := filepath.Base(opts.Path)
 
-	if _, err := os.Stat(opts.Path); os.IsNotExist(err) {
+	if _, err := os.Stat(opts.Path); errors.Is(err, fs.ErrNotExist) {
 		progress(w, "warning: directory already removed, pruning stale entry\n")
 	} else if _, err := r.Run("git", "worktree", "remove", "--force", opts.Path); err != nil {
 		return fmt.Errorf("removing worktree %s: %w", name, err)
