@@ -17,6 +17,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 	var opts worktree.CreateOpts
 	var skipTmux bool
 	var skipAttach bool
+	var cmdArgs string
 
 	cmd := &cobra.Command{
 		Use:   "create [name]",
@@ -48,7 +49,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "Created worktree %s\n", wt.Branch) //nolint:errcheck
 
 			if !skipTmux && cfg.Tmux.Enabled {
-				if err := createTmuxSession(r, cfg, wt, skipAttach); err != nil {
+				if err := createTmuxSession(r, cfg, wt, skipAttach, cmdArgs); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: tmux session failed: %v\n", err)
 				}
 			}
@@ -62,18 +63,19 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.SkipSymlinks, "no-symlinks", false, "skip symlinking")
 	cmd.Flags().BoolVar(&skipTmux, "no-tmux", false, "skip tmux session creation")
 	cmd.Flags().BoolVar(&skipAttach, "no-attach", false, "create tmux session but don't attach")
+	cmd.Flags().StringVar(&cmdArgs, "args", "", "arguments to pass to commands containing {{.Args}}")
 
 	return cmd
 }
 
 // createTmuxSession creates a tmux session for the worktree and optionally connects.
-func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree, skipAttach bool) error {
+func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree, skipAttach bool, cmdArgs string) error {
 	if !tmux.IsInstalled(r) {
 		fmt.Fprintln(os.Stderr, "warning: tmux not found, skipping session creation")
 		return nil
 	}
 
-	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows); err != nil {
+	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows, cmdArgs); err != nil {
 		return err
 	}
 
