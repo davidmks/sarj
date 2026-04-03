@@ -670,6 +670,11 @@ func TestBuildCommand(t *testing.T) {
 			args:    "do something",
 			want:    "set -a && source .env && set +a && clear && claude do something",
 		},
+		{
+			name:    "args empty preserves intentional whitespace",
+			command: "echo 'hello    world' {{.Args}}",
+			want:    "clear && echo 'hello    world'",
+		},
 	}
 
 	for _, tt := range tests {

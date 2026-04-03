@@ -288,15 +288,36 @@ func BuildCommand(envFile string, env map[string]string, command, args string) s
 }
 
 // replaceArgs substitutes {{.Args}} in a command string with the given args.
-// When args is empty the placeholder is removed and surrounding whitespace is collapsed.
+// When args is empty the placeholder is removed and surrounding whitespace
+// around it is collapsed without affecting the rest of the command.
 func replaceArgs(command, args string) string {
-	if !strings.Contains(command, "{{.Args}}") {
+	const placeholder = "{{.Args}}"
+	if !strings.Contains(command, placeholder) {
 		return command
 	}
-	replaced := strings.ReplaceAll(command, "{{.Args}}", args)
-	// Collapse multiple spaces left by empty replacement and trim edges.
-	parts := strings.Fields(replaced)
-	return strings.Join(parts, " ")
+	if args != "" {
+		return strings.ReplaceAll(command, placeholder, args)
+	}
+	// Empty args: remove placeholder and collapse adjacent spaces at each site.
+	var result strings.Builder
+	for {
+		idx := strings.Index(command, placeholder)
+		if idx == -1 {
+			result.WriteString(command)
+			break
+		}
+		// Trim trailing space before the placeholder.
+		before := command[:idx]
+		after := command[idx+len(placeholder):]
+		before = strings.TrimRight(before, " ")
+		after = strings.TrimLeft(after, " ")
+		result.WriteString(before)
+		if before != "" && after != "" {
+			result.WriteByte(' ')
+		}
+		command = after
+	}
+	return result.String()
 }
 
 // shellQuote wraps s in single quotes if it contains shell-unsafe characters.
