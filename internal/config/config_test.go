@@ -210,6 +210,36 @@ symlinks = [".env"]
 	assert.Equal(t, []string{".env"}, cfg.Symlinks, "symlinks should fall through from project")
 }
 
+func TestLoadWithPaths_SetupAsync(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.project, `
+setup_command = "make setup"
+setup_async = true
+`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.True(t, cfg.IsSetupAsync())
+	assert.Equal(t, "make setup", cfg.SetupCommand)
+}
+
+func TestLoadWithPaths_SetupAsyncLocalOverride(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.project, `
+setup_command = "make setup"
+setup_async = true
+`)
+	writeFile(t, p.local, `setup_async = false`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.False(t, cfg.IsSetupAsync(), "local should override project setup_async to false")
+}
+
 func TestLoadWithPaths_LocalNoFile(t *testing.T) {
 	p := newTestPaths(t)
 

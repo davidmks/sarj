@@ -560,6 +560,72 @@ func TestCreateSession_WindowAndPaneFocus(t *testing.T) {
 	assert.True(t, r.hasCall("select-window -t s:shell"))
 }
 
+func TestFocusedWindowName(t *testing.T) {
+	t.Run("returns first when no focus set", func(t *testing.T) {
+		windows := []config.WindowConfig{{Name: "editor"}, {Name: "shell"}}
+		assert.Equal(t, "editor", tmux.FocusedWindowName(windows))
+	})
+
+	t.Run("returns focused window", func(t *testing.T) {
+		windows := []config.WindowConfig{{Name: "editor"}, {Name: "shell", Focus: true}}
+		assert.Equal(t, "shell", tmux.FocusedWindowName(windows))
+	})
+
+	t.Run("returns terminal for empty list", func(t *testing.T) {
+		assert.Equal(t, "terminal", tmux.FocusedWindowName(nil))
+	})
+}
+
+func TestRunSetup(t *testing.T) {
+	r := &fakeRunner{responses: map[string]response{}}
+
+	err := tmux.RunSetup(r, "my-session", "/work/repo", "make setup", "terminal", true)
+	require.NoError(t, err)
+
+	assert.True(t, r.hasCall("new-window -t my-session -n setup -c /work/repo"))
+	assert.True(t, r.hasCall("send-keys -t my-session:setup clear && make setup && exit Enter"))
+	assert.True(t, r.hasCall("select-window -t my-session:terminal"))
+}
+
+func TestRunSetup_KeepOpen(t *testing.T) {
+	r := &fakeRunner{responses: map[string]response{}}
+
+	err := tmux.RunSetup(r, "s", "/work", "make setup", "editor", false)
+	require.NoError(t, err)
+
+	assert.True(t, r.hasCall("send-keys -t s:setup clear && make setup Enter"))
+	assert.False(t, r.hasCall("exit"))
+}
+
+func TestRunSetup_SanitizesName(t *testing.T) {
+	r := &fakeRunner{responses: map[string]response{}}
+
+	err := tmux.RunSetup(r, "feat.v2", "/work", "npm install", "terminal", true)
+	require.NoError(t, err)
+
+	assert.True(t, r.hasCall("new-window -t feat-v2 -n setup"))
+}
+
+func TestRunSetup_NewWindowFails(t *testing.T) {
+	r := &fakeRunner{responses: map[string]response{
+		"tmux new-window": {err: fmt.Errorf("session not found")},
+	}}
+
+	err := tmux.RunSetup(r, "s", "/work", "make setup", "terminal", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "creating setup window")
+}
+
+func TestRunSetup_SendKeysFails(t *testing.T) {
+	r := &fakeRunner{responses: map[string]response{
+		"tmux send-keys": {err: fmt.Errorf("pane not found")},
+	}}
+
+	err := tmux.RunSetup(r, "s", "/work", "make setup", "terminal", true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sending setup command")
+}
+
 func TestBuildCommand(t *testing.T) {
 	tests := []struct {
 		name    string

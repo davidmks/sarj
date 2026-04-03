@@ -183,6 +183,52 @@ func focusedPaneIndex(w config.WindowConfig) (int, bool) {
 	return idx, true
 }
 
+// FocusedWindowName returns the name of the window that should have focus,
+// matching the logic in CreateSession. Returns the first window name if none
+// has Focus set.
+func FocusedWindowName(windows []config.WindowConfig) string {
+	if len(windows) == 0 {
+		return "terminal"
+	}
+	name := windows[0].Name
+	for _, w := range windows {
+		if w.Focus {
+			name = w.Name
+		}
+	}
+	return name
+}
+
+// RunSetup creates a "setup" window in the session and runs the given command.
+// When closeOnSuccess is true the window auto-closes after a successful run;
+// otherwise it stays open so the user can review the output.
+// The focusWindow parameter is the name of the window to switch back to after
+// creating the setup window.
+func RunSetup(r exec.Runner, sessionName, path, command, focusWindow string, closeOnSuccess bool) error {
+	sessionName = SanitizeName(sessionName)
+	args := []string{"new-window", "-t", sessionName, "-n", "setup", "-c", path}
+	if _, err := r.Run("tmux", args...); err != nil {
+		return fmt.Errorf("creating setup window: %w", err)
+	}
+
+	target := sessionName + ":setup"
+	full := "clear && " + command
+	if closeOnSuccess {
+		full += " && exit"
+	}
+	if _, err := r.Run("tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
+		return fmt.Errorf("sending setup command: %w", err)
+	}
+
+	// Switch focus back so the user doesn't land on the setup window.
+	if _, err := r.Run("tmux", "select-window", "-t", sessionName+":"+focusWindow); err != nil {
+		// Non-fatal: the user just sees the setup window first.
+		fmt.Fprintf(os.Stderr, "warning: could not switch back from setup window: %v\n", err)
+	}
+
+	return nil
+}
+
 // KillSession destroys a tmux session. Returns nil if the session doesn't exist.
 func KillSession(r exec.Runner, name string) error {
 	name = SanitizeName(name)

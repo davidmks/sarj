@@ -20,7 +20,24 @@ type Config struct {
 
 	// Per-project only fields
 	SetupCommand string   `toml:"setup_command"`
+	SetupAsync   *bool    `toml:"setup_async"`
+	SetupClose   *bool    `toml:"setup_close"`
 	Symlinks     []string `toml:"symlinks"`
+}
+
+// IsSetupAsync returns whether the setup command should run asynchronously
+// in a tmux window. Defaults to false when not explicitly configured.
+func (c *Config) IsSetupAsync() bool {
+	return c.SetupAsync != nil && *c.SetupAsync
+}
+
+// ShouldCloseSetup returns whether the async setup window should auto-close
+// on success. Defaults to true when not explicitly configured.
+func (c *Config) ShouldCloseSetup() bool {
+	if c.SetupClose == nil {
+		return true
+	}
+	return *c.SetupClose
 }
 
 // TmuxConfig holds tmux-related settings.
@@ -167,6 +184,12 @@ func merge(global, project *Config) {
 	if project.SetupCommand != "" {
 		global.SetupCommand = project.SetupCommand
 	}
+	if project.SetupAsync != nil {
+		global.SetupAsync = project.SetupAsync
+	}
+	if project.SetupClose != nil {
+		global.SetupClose = project.SetupClose
+	}
 	if len(project.Symlinks) > 0 {
 		global.Symlinks = project.Symlinks
 	}
@@ -186,6 +209,12 @@ func mergeLocal(base, local *Config) {
 	}
 	if local.SetupCommand != "" {
 		base.SetupCommand = local.SetupCommand
+	}
+	if local.SetupAsync != nil {
+		base.SetupAsync = local.SetupAsync
+	}
+	if local.SetupClose != nil {
+		base.SetupClose = local.SetupClose
 	}
 	if len(local.Symlinks) > 0 {
 		base.Symlinks = local.Symlinks

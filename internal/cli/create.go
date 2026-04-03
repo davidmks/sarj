@@ -40,6 +40,13 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 
 			opts.Progress = os.Stderr
 
+			// When setup_async is enabled and tmux will run, defer the setup
+			// command to a dedicated tmux window instead of blocking here.
+			runSetupAsync := cfg.IsSetupAsync() && cfg.SetupCommand != "" && !opts.SkipSetup && !skipTmux && cfg.Tmux.Enabled
+			if runSetupAsync {
+				opts.SkipSetup = true
+			}
+
 			wt, err := worktree.Create(r, cfg, opts)
 			if err != nil {
 				return err
@@ -50,6 +57,11 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 			if !skipTmux && cfg.Tmux.Enabled {
 				if err := createTmuxSession(r, cfg, wt, skipAttach); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: tmux session failed: %v\n", err)
+				} else if runSetupAsync {
+					focusWindow := tmux.FocusedWindowName(cfg.Tmux.Windows)
+					if err := tmux.RunSetup(r, wt.Branch, wt.Path, cfg.SetupCommand, focusWindow, cfg.ShouldCloseSetup()); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: async setup failed: %v\n", err)
+					}
 				}
 			}
 
