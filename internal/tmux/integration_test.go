@@ -34,7 +34,7 @@ func TestIntegration_CreateAndKillSession(t *testing.T) {
 		{Name: "editor", Command: "echo hello"},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows)
+	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "")
 	require.NoError(t, err)
 	assert.True(t, tmux.SessionExists(r, sessionName))
 
@@ -67,7 +67,7 @@ func TestIntegration_SessionWithPanes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows)
+	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "")
 	require.NoError(t, err)
 
 	out, err := r.Run("tmux", "list-panes", "-t", sessionName+":dev", "-F", "#{pane_index}")
@@ -96,7 +96,7 @@ func TestIntegration_Focus(t *testing.T) {
 		{Name: "shell", Focus: true},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows)
+	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "")
 	require.NoError(t, err)
 
 	activeWindow, err := r.Run("tmux", "display-message", "-t", sessionName, "-p", "#{window_name}")
@@ -117,7 +117,7 @@ func TestIntegration_ListSessions(t *testing.T) {
 		tmux.KillSession(r, sessionName)
 	})
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), nil)
+	err := tmux.CreateSession(r, sessionName, t.TempDir(), nil, "")
 	require.NoError(t, err)
 
 	sessions, err := tmux.ListSessions(r)
@@ -144,7 +144,7 @@ func TestIntegration_SessionWithPaneSizes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows)
+	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "")
 	require.NoError(t, err)
 
 	out, err := r.Run("tmux", "list-panes", "-t", sessionName+":dev", "-F", "#{pane_index}")
@@ -169,7 +169,7 @@ func TestIntegration_SanitizedSessionName(t *testing.T) {
 		tmux.KillSession(r, "feat.v2")
 	})
 
-	err := tmux.CreateSession(r, "feat.v2", t.TempDir(), nil)
+	err := tmux.CreateSession(r, "feat.v2", t.TempDir(), nil, "")
 	require.NoError(t, err)
 
 	assert.True(t, tmux.SessionExists(r, "feat-v2"))
