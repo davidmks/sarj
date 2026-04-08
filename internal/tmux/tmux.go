@@ -39,7 +39,8 @@ func SessionExists(r exec.Runner, name string) bool {
 
 // CreateSession creates a new tmux session with the configured windows and panes.
 // The session is created in detached mode; call Connect to connect.
-func CreateSession(r exec.Runner, name, path string, windows []config.WindowConfig) error {
+// The args string is substituted into any command containing {{.Args}}.
+func CreateSession(r exec.Runner, name, path string, windows []config.WindowConfig, cmdArgs string) error {
 	name = SanitizeName(name)
 
 	if len(windows) == 0 {
@@ -56,10 +57,10 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 		return fmt.Errorf("creating tmux session %s: %w", name, err)
 	}
 
-	if err := sendWindowCommand(r, name, first); err != nil {
+	if err := sendWindowCommand(r, name, first, cmdArgs); err != nil {
 		return err
 	}
-	if err := createPanes(r, name, first, path); err != nil {
+	if err := createPanes(r, name, first, path, cmdArgs); err != nil {
 		return err
 	}
 
@@ -69,10 +70,10 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 			return fmt.Errorf("creating tmux window %s: %w", w.Name, err)
 		}
 
-		if err := sendWindowCommand(r, name, w); err != nil {
+		if err := sendWindowCommand(r, name, w, cmdArgs); err != nil {
 			return err
 		}
-		if err := createPanes(r, name, w, path); err != nil {
+		if err := createPanes(r, name, w, path, cmdArgs); err != nil {
 			return err
 		}
 	}
@@ -101,13 +102,13 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 
 // sendWindowCommand sends the composed command to a window via send-keys.
 // When panes are configured, the first pane's command replaces the window command.
-func sendWindowCommand(r exec.Runner, session string, w config.WindowConfig) error {
+func sendWindowCommand(r exec.Runner, session string, w config.WindowConfig, cmdArgs string) error {
 	cmd := w.Command
 	if len(w.Panes) > 0 {
 		cmd = w.Panes[0].Command
 	}
 
-	full := BuildCommand(w.EnvFile, w.Env, cmd)
+	full := BuildCommand(w.EnvFile, w.Env, cmd, cmdArgs)
 	target := session + ":" + w.Name
 	if _, err := r.Run("tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
 		return fmt.Errorf("sending command to window %s: %w", w.Name, err)
@@ -118,7 +119,7 @@ func sendWindowCommand(r exec.Runner, session string, w config.WindowConfig) err
 // createPanes splits the window into additional panes.
 // The first pane's command is already handled by sendWindowCommand;
 // subsequent entries create splits.
-func createPanes(r exec.Runner, session string, w config.WindowConfig, path string) error {
+func createPanes(r exec.Runner, session string, w config.WindowConfig, path, cmdArgs string) error {
 	if len(w.Panes) <= 1 {
 		return nil
 	}
@@ -142,7 +143,7 @@ func createPanes(r exec.Runner, session string, w config.WindowConfig, path stri
 		}
 
 		// Panes inherit env/env_file from parent window
-		full := BuildCommand(w.EnvFile, w.Env, p.Command)
+		full := BuildCommand(w.EnvFile, w.Env, p.Command, cmdArgs)
 		if _, err := r.Run("tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
 			return fmt.Errorf("sending command to pane in %s: %w", w.Name, err)
 		}
@@ -250,7 +251,10 @@ func ListSessions(r exec.Runner) ([]string, error) {
 //   - With command: env setup && clear && command
 //   - Without command: env setup && clear
 //   - Nothing at all: clear
-func BuildCommand(envFile string, env map[string]string, command string) string {
+//
+// The command may contain {{.Args}} which is replaced with the provided args.
+// When args is empty the placeholder is removed and surrounding whitespace is trimmed.
+func BuildCommand(envFile string, env map[string]string, command, args string) string {
 	var parts []string
 
 	if envFile != "" {
@@ -274,10 +278,46 @@ func BuildCommand(envFile string, env map[string]string, command string) string 
 	parts = append(parts, "clear")
 
 	if command != "" {
-		parts = append(parts, command)
+		command = replaceArgs(command, args)
+		if command != "" {
+			parts = append(parts, command)
+		}
 	}
 
 	return strings.Join(parts, " && ")
+}
+
+// replaceArgs substitutes {{.Args}} in a command string with the given args.
+// When args is empty the placeholder is removed and surrounding whitespace
+// around it is collapsed without affecting the rest of the command.
+func replaceArgs(command, args string) string {
+	const placeholder = "{{.Args}}"
+	if !strings.Contains(command, placeholder) {
+		return command
+	}
+	if args != "" {
+		return strings.ReplaceAll(command, placeholder, args)
+	}
+	// Empty args: remove placeholder and collapse adjacent spaces at each site.
+	var result strings.Builder
+	for {
+		idx := strings.Index(command, placeholder)
+		if idx == -1 {
+			result.WriteString(command)
+			break
+		}
+		// Trim trailing space before the placeholder.
+		before := command[:idx]
+		after := command[idx+len(placeholder):]
+		before = strings.TrimRight(before, " ")
+		after = strings.TrimLeft(after, " ")
+		result.WriteString(before)
+		if before != "" && after != "" {
+			result.WriteByte(' ')
+		}
+		command = after
+	}
+	return result.String()
 }
 
 // shellQuote wraps s in single quotes if it contains shell-unsafe characters.
