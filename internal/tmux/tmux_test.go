@@ -572,7 +572,7 @@ func TestCreateSession_WithArgs(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t s:editor clear && nvim . Enter"))
-	assert.True(t, r.hasCall("send-keys -t s:claude clear && claude fix the bug Enter"))
+	assert.True(t, r.hasCall("send-keys -t s:claude clear && claude 'fix the bug' Enter"))
 }
 
 func TestCreateSession_WithArgsInPanes(t *testing.T) {
@@ -591,7 +591,7 @@ func TestCreateSession_WithArgsInPanes(t *testing.T) {
 	err := tmux.CreateSession(r, "s", "/work", windows, "do something")
 	require.NoError(t, err)
 
-	assert.True(t, r.hasCall("send-keys -t s:dev clear && claude do something Enter"))
+	assert.True(t, r.hasCall("send-keys -t s:dev clear && claude 'do something' Enter"))
 	assert.True(t, r.hasCall("send-keys -t s:dev clear && make watch Enter"))
 }
 
@@ -650,7 +650,13 @@ func TestBuildCommand(t *testing.T) {
 			name:    "args placeholder replaced",
 			command: "claude {{.Args}}",
 			args:    "fix the login bug",
-			want:    "clear && claude fix the login bug",
+			want:    "clear && claude 'fix the login bug'",
+		},
+		{
+			name:    "args single word not quoted",
+			command: "claude {{.Args}}",
+			args:    "refactor",
+			want:    "clear && claude refactor",
 		},
 		{
 			name:    "args placeholder removed when empty",
@@ -668,7 +674,7 @@ func TestBuildCommand(t *testing.T) {
 			envFile: ".env",
 			command: "claude {{.Args}}",
 			args:    "do something",
-			want:    "set -a && source .env && set +a && clear && claude do something",
+			want:    "set -a && source .env && set +a && clear && claude 'do something'",
 		},
 		{
 			name:    "args empty preserves intentional whitespace",

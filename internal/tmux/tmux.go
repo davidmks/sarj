@@ -296,7 +296,7 @@ func replaceArgs(command, args string) string {
 		return command
 	}
 	if args != "" {
-		return strings.ReplaceAll(command, placeholder, args)
+		return strings.ReplaceAll(command, placeholder, shellQuote(args))
 	}
 	// Empty args: remove placeholder and collapse adjacent spaces at each site.
 	var result strings.Builder
