@@ -1,6 +1,6 @@
 BINARY := bin/sarj
 MODULE := github.com/davidmks/sarj
-VERSION ?= dev
+VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
 
 .PHONY: build install test test-int lint fmt clean snapshot
