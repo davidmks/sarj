@@ -164,9 +164,11 @@ symlinks = [
 ]
 ```
 
-#### Running setup asynchronously in a tmux window
+#### Running setup asynchronously in tmux
 
-By default, `setup_command` runs synchronously before the tmux session opens, blocking until it finishes. To skip the synchronous run and instead launch setup as a background tmux window, set `auto_setup = false` and add a dedicated window:
+By default, `setup_command` runs synchronously before the tmux session opens, blocking until it finishes. To skip the synchronous run and instead launch setup in tmux, set `auto_setup = false` and add either a dedicated window or a pane.
+
+**As a window:**
 
 ```toml
 setup_command = "make setup"
@@ -182,7 +184,26 @@ command = "nvim ."
 focus = true
 ```
 
-Setup runs in its own window while you start working in the focused one. The `--no-setup` flag still applies on top of `auto_setup` to skip both.
+**As a pane** (alongside your editor in the same window):
+
+```toml
+setup_command = "make setup"
+auto_setup = false
+
+[[tmux.windows]]
+name = "dev"
+
+[[tmux.windows.panes]]
+command = "nvim ."
+size = 70
+focus = true
+
+[[tmux.windows.panes]]
+command = "make setup"
+split = "horizontal"
+```
+
+Setup runs alongside your work instead of blocking. The `--no-setup` flag still applies on top of `auto_setup` to skip both.
 
 ### Local: `.sarj.local.toml`
 
