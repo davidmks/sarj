@@ -41,6 +41,11 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 
 			opts.Progress = os.Stderr
 
+			// --no-setup wins over the config; otherwise honor auto_setup (default: true).
+			if !opts.SkipSetup && !cfg.IsAutoSetup() {
+				opts.SkipSetup = true
+			}
+
 			wt, err := worktree.Create(r, cfg, opts)
 			if err != nil {
 				return err
