@@ -148,6 +148,38 @@ split = "horizontal"
 size = 30
 ```
 
+#### Command placeholders
+
+Window and pane commands can include placeholders that are substituted at session creation:
+
+| Placeholder | Source | Notes |
+|------|--------|-------|
+| `{{.Args}}` | The `--args` flag passed to `sarj create` | Shell-quoted to preserve word boundaries |
+| `{{.SetupCommand}}` | The `setup_command` config value | Inlined as a shell snippet (not quoted) |
+
+This makes it possible to keep the layout in your global config and let projects supply only the data they own. For example, the global config defines a 3-pane layout where the third pane runs the project's setup command:
+
+```toml
+# ~/.config/sarj/config.toml
+[[tmux.windows]]
+name = "dev"
+
+[[tmux.windows.panes]]
+command = "claude {{.Args}}"
+focus = true
+
+[[tmux.windows.panes]]
+command = "nvim"
+split = "horizontal"
+
+[[tmux.windows.panes]]
+command = "{{.SetupCommand}}"
+split = "vertical"
+size = 30
+```
+
+Each project then declares only its own `setup_command` in `.sarj.toml`, and the third pane runs whatever that project supplies. If a placeholder's value is empty, the placeholder is removed cleanly.
+
 ### Per-project: `.sarj.toml`
 
 Team-shared settings — setup command, symlinks, default branch, tmux windows.

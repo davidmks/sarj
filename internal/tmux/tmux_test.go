@@ -134,7 +134,7 @@ func TestCreateSession_SingleWindow(t *testing.T) {
 		{Name: "terminal"},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "")
+	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("new-session -d -s my-session -c /work/repo -n terminal"))
@@ -150,7 +150,7 @@ func TestCreateSession_MultipleWindows(t *testing.T) {
 		{Name: "claude", Command: "claude"},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "")
+	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("new-session -d -s my-session"))
@@ -173,7 +173,7 @@ func TestCreateSession_WithPanes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "")
+	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t my-session:dev clear && nvim . Enter"))
@@ -184,7 +184,7 @@ func TestCreateSession_WithPanes(t *testing.T) {
 func TestCreateSession_SanitizesName(t *testing.T) {
 	r := &fakeRunner{responses: map[string]response{}}
 
-	err := tmux.CreateSession(r, "feat.v2", "/work", []config.WindowConfig{{Name: "terminal"}}, "")
+	err := tmux.CreateSession(r, "feat.v2", "/work", []config.WindowConfig{{Name: "terminal"}}, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("-s feat-v2"))
@@ -193,7 +193,7 @@ func TestCreateSession_SanitizesName(t *testing.T) {
 func TestCreateSession_DefaultWindow(t *testing.T) {
 	r := &fakeRunner{responses: map[string]response{}}
 
-	err := tmux.CreateSession(r, "test", "/work", nil, "")
+	err := tmux.CreateSession(r, "test", "/work", nil, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("-n terminal"))
@@ -204,7 +204,7 @@ func TestCreateSession_NewSessionFails(t *testing.T) {
 		"tmux new-session": {err: fmt.Errorf("duplicate session")},
 	}}
 
-	err := tmux.CreateSession(r, "my-session", "/work", []config.WindowConfig{{Name: "terminal"}}, "")
+	err := tmux.CreateSession(r, "my-session", "/work", []config.WindowConfig{{Name: "terminal"}}, "", "")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating tmux session")
@@ -220,7 +220,7 @@ func TestCreateSession_NewWindowFails(t *testing.T) {
 		{Name: "editor", Command: "nvim ."},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work", windows, "")
+	err := tmux.CreateSession(r, "my-session", "/work", windows, "", "")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating tmux window")
@@ -497,7 +497,7 @@ func TestCreateSession_PaneFocusWithBaseIndex(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "")
+	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-pane -t s:dev.1"))
@@ -511,7 +511,7 @@ func TestCreateSession_WindowFocus(t *testing.T) {
 		{Name: "editor", Command: "nvim .", Focus: true},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "")
+	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-window -t s:editor"))
@@ -532,7 +532,7 @@ func TestCreateSession_PaneFocus(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "")
+	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-pane -t s:dev.2"))
@@ -553,7 +553,7 @@ func TestCreateSession_WindowAndPaneFocus(t *testing.T) {
 		{Name: "shell", Focus: true},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "")
+	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-pane -t s:dev.0"))
@@ -568,7 +568,7 @@ func TestCreateSession_WithArgs(t *testing.T) {
 		{Name: "claude", Command: "claude {{.Args}}"},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "fix the bug")
+	err := tmux.CreateSession(r, "s", "/work", windows, "fix the bug", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t s:editor clear && nvim . Enter"))
@@ -588,7 +588,7 @@ func TestCreateSession_WithArgsInPanes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "do something")
+	err := tmux.CreateSession(r, "s", "/work", windows, "do something", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t s:dev clear && claude 'do something' Enter"))
@@ -597,12 +597,13 @@ func TestCreateSession_WithArgsInPanes(t *testing.T) {
 
 func TestBuildCommand(t *testing.T) {
 	tests := []struct {
-		name    string
-		envFile string
-		env     map[string]string
-		command string
-		args    string
-		want    string
+		name         string
+		envFile      string
+		env          map[string]string
+		command      string
+		args         string
+		setupCommand string
+		want         string
 	}{
 		{
 			name:    "command only",
@@ -681,11 +682,35 @@ func TestBuildCommand(t *testing.T) {
 			command: "echo 'hello    world' {{.Args}}",
 			want:    "clear && echo 'hello    world'",
 		},
+		{
+			name:         "setup command placeholder replaced",
+			command:      "{{.SetupCommand}}",
+			setupCommand: "make setup",
+			want:         "clear && make setup",
+		},
+		{
+			name:         "setup command not shell-quoted",
+			command:      "{{.SetupCommand}} && exit",
+			setupCommand: "make setup",
+			want:         "clear && make setup && exit",
+		},
+		{
+			name:    "setup command placeholder removed when empty",
+			command: "{{.SetupCommand}}",
+			want:    "clear",
+		},
+		{
+			name:         "args and setup command together",
+			command:      "{{.SetupCommand}} && claude {{.Args}}",
+			args:         "fix bug",
+			setupCommand: "npm install",
+			want:         "clear && npm install && claude 'fix bug'",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tmux.BuildCommand(tt.envFile, tt.env, tt.command, tt.args)
+			got := tmux.BuildCommand(tt.envFile, tt.env, tt.command, tt.args, tt.setupCommand)
 			assert.Equal(t, tt.want, got)
 		})
 	}

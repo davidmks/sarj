@@ -79,7 +79,7 @@ func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree,
 		return nil
 	}
 
-	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows, cmdArgs); err != nil {
+	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows, cmdArgs, cfg.SetupCommand); err != nil {
 		return err
 	}
 
