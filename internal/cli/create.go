@@ -41,7 +41,6 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 
 			opts.Progress = os.Stderr
 
-			// auto_setup = false acts like --no-setup; the flag still wins when set.
 			if !cfg.IsAutoSetup() {
 				opts.SkipSetup = true
 			}
