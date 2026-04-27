@@ -254,6 +254,56 @@ func TestCreateCmd_Error(t *testing.T) {
 	assert.Error(t, cmd.Execute())
 }
 
+func TestCreateCmd_AutoSetupFalseSkipsSetup(t *testing.T) {
+	isolateConfig(t)
+	dir := newRepoDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"), []byte(`
+default_branch = "main"
+setup_command = "echo running setup"
+auto_setup = false
+`), 0o600))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"git fetch":                     {},
+		"git show-ref --verify --quiet refs/heads/my-feature":    {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/origin/main": {},
+		"git worktree": {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"create", "my-feature", "--no-tmux"})
+
+	require.NoError(t, cmd.Execute())
+	assert.False(t, r.hasCall("echo running setup"), "auto_setup = false should skip the setup command")
+}
+
+func TestCreateCmd_NoSetupFalseOverridesAutoSetupFalse(t *testing.T) {
+	isolateConfig(t)
+	dir := newRepoDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"), []byte(`
+default_branch = "main"
+setup_command = "echo running setup"
+auto_setup = false
+`), 0o600))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"git fetch":                     {},
+		"git show-ref --verify --quiet refs/heads/my-feature":    {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/origin/main": {},
+		"git worktree": {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"create", "my-feature", "--no-tmux", "--no-setup=false"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, r.hasCall("echo running setup"), "explicit --no-setup=false should run setup despite auto_setup = false")
+}
+
 func TestDeleteCmd_KeepBranch(t *testing.T) {
 	isolateConfig(t)
 	saveCwd(t)

@@ -35,7 +35,8 @@ func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 	return "", nil
 }
 
-func (f *fakeRunner) RunInteractive(_ string, _ ...string) error {
+func (f *fakeRunner) RunInteractive(name string, args ...string) error {
+	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
 	return nil
 }
 

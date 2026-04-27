@@ -203,7 +203,7 @@ command = "make setup"
 split = "horizontal"
 ```
 
-Setup runs alongside your work instead of blocking. The `--no-setup` flag still applies on top of `auto_setup` to skip both.
+Setup runs alongside your work instead of blocking. `--no-setup` only skips the synchronous `setup_command` run during `sarj create` (and forces it off even when `auto_setup = true`); it does not stop a tmux window or pane that has its own command. Use `--no-tmux` to skip the tmux session entirely.
 
 ### Local: `.sarj.local.toml`
 
