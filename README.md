@@ -180,6 +180,11 @@ size = 30
 
 Each project then declares only its own `setup_command` in `.sarj.toml`, and the third pane runs whatever that project supplies. If a placeholder's value is empty, the placeholder is removed cleanly.
 
+**Interaction with `--no-setup` and `auto_setup`:**
+
+- `sarj create --no-setup` clears `{{.SetupCommand}}` (the placeholder resolves to empty) so the user's explicit opt-out also stops the tmux-driven run.
+- `auto_setup = false` only skips the synchronous `setup_command` run; `{{.SetupCommand}}` still resolves to its value, which is the normal way to defer setup into a tmux pane.
+
 ### Per-project: `.sarj.toml`
 
 Team-shared settings — setup command, symlinks, default branch, tmux windows.
