@@ -164,6 +164,47 @@ symlinks = [
 ]
 ```
 
+#### Running setup asynchronously in tmux
+
+By default, `setup_command` runs synchronously before the tmux session opens, blocking until it finishes. To skip the synchronous run and instead launch setup in tmux, set `auto_setup = false` and add either a dedicated window or a pane.
+
+**As a window:**
+
+```toml
+setup_command = "make setup"
+auto_setup = false  # equivalent to passing --no-setup every time
+
+[[tmux.windows]]
+name = "setup"
+command = "make setup && exit"  # auto-closes on success; drop "&& exit" to keep open
+
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+focus = true
+```
+
+**As a pane** (alongside your editor in the same window):
+
+```toml
+setup_command = "make setup"
+auto_setup = false
+
+[[tmux.windows]]
+name = "dev"
+
+[[tmux.windows.panes]]
+command = "nvim ."
+size = 70
+focus = true
+
+[[tmux.windows.panes]]
+command = "make setup"
+split = "horizontal"
+```
+
+Setup runs alongside your work instead of blocking. `--no-setup` only skips the synchronous `setup_command` run during `sarj create` (and forces it off even when `auto_setup = true`); it does not stop a tmux window or pane that has its own command. Use `--no-tmux` to skip the tmux session entirely.
+
 ### Local: `.sarj.local.toml`
 
 Per-user overrides for a specific project — gitignored, never committed. Sections defined here replace the corresponding section from the project or global config. Generate with `sarj init --local`.
