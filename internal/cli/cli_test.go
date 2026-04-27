@@ -304,6 +304,64 @@ auto_setup = false
 	assert.True(t, r.hasCall("echo running setup"), "explicit --no-setup=false should run setup despite auto_setup = false")
 }
 
+func TestCreateCmd_NoSetupClearsPlaceholder(t *testing.T) {
+	isolateConfig(t)
+	dir := newRepoDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"), []byte(`
+default_branch = "main"
+setup_command = "make setup"
+
+[[tmux.windows]]
+name = "dev"
+command = "{{.SetupCommand}}"
+`), 0o600))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"git fetch":                     {},
+		"git show-ref --verify --quiet refs/heads/my-feature":    {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/origin/main": {},
+		"git worktree": {},
+		"tmux":         {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"create", "my-feature", "--no-setup", "--no-attach"})
+
+	require.NoError(t, cmd.Execute())
+	assert.False(t, r.hasCall("make setup"), "--no-setup should clear {{.SetupCommand}} so the pane does not run setup")
+}
+
+func TestCreateCmd_PlaceholderSubstitutedByDefault(t *testing.T) {
+	isolateConfig(t)
+	dir := newRepoDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"), []byte(`
+default_branch = "main"
+setup_command = "make setup"
+
+[[tmux.windows]]
+name = "dev"
+command = "{{.SetupCommand}}"
+`), 0o600))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"git fetch":                     {},
+		"git show-ref --verify --quiet refs/heads/my-feature":    {err: fmt.Errorf("not found")},
+		"git show-ref --verify --quiet refs/remotes/origin/main": {},
+		"git worktree": {},
+		"tmux":         {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"create", "my-feature", "--no-attach"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, r.hasCall("send-keys -t my-feature:dev clear && make setup Enter"), "without --no-setup, placeholder should resolve to setup_command")
+}
+
 func TestDeleteCmd_KeepBranch(t *testing.T) {
 	isolateConfig(t)
 	saveCwd(t)
