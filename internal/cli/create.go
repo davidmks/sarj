@@ -53,7 +53,14 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "Created worktree %s\n", wt.Branch) //nolint:errcheck
 
 			if !skipTmux && cfg.Tmux.Enabled {
-				if err := createTmuxSession(r, cfg, wt, skipAttach, cmdArgs); err != nil {
+				// Clear the {{.SetupCommand}} placeholder when the user
+				// explicitly passes --no-setup so a tmux pane referencing it
+				// doesn't run the setup the user just opted out of.
+				setupCmd := cfg.SetupCommand
+				if cmd.Flags().Changed("no-setup") && opts.SkipSetup {
+					setupCmd = ""
+				}
+				if err := createTmuxSession(r, cfg, wt, skipAttach, cmdArgs, setupCmd); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: tmux session failed: %v\n", err)
 				}
 			}
@@ -73,13 +80,13 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 }
 
 // createTmuxSession creates a tmux session for the worktree and optionally connects.
-func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree, skipAttach bool, cmdArgs string) error {
+func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree, skipAttach bool, cmdArgs, setupCmd string) error {
 	if !tmux.IsInstalled(r) {
 		fmt.Fprintln(os.Stderr, "warning: tmux not found, skipping session creation")
 		return nil
 	}
 
-	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows, cmdArgs, cfg.SetupCommand); err != nil {
+	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows, cmdArgs, setupCmd); err != nil {
 		return err
 	}
 
