@@ -20,7 +20,18 @@ type Config struct {
 
 	// Per-project only fields
 	SetupCommand string   `toml:"setup_command"`
+	AutoSetup    *bool    `toml:"auto_setup"`
 	Symlinks     []string `toml:"symlinks"`
+}
+
+// IsAutoSetup returns whether the setup command should run automatically
+// during sarj create. Defaults to true when not explicitly configured.
+// Set to false to skip setup by default (equivalent to passing --no-setup).
+func (c *Config) IsAutoSetup() bool {
+	if c.AutoSetup == nil {
+		return true
+	}
+	return *c.AutoSetup
 }
 
 // TmuxConfig holds tmux-related settings.
@@ -159,13 +170,16 @@ func loadFile(path string, dst any) error {
 }
 
 // merge overlays per-project fields onto the global config.
-// Per-project wins for: default_branch, setup_command, symlinks, tmux windows.
+// Per-project wins for: default_branch, setup_command, auto_setup, symlinks, tmux windows.
 func merge(global, project *Config) {
 	if project.DefaultBranch != "" {
 		global.DefaultBranch = project.DefaultBranch
 	}
 	if project.SetupCommand != "" {
 		global.SetupCommand = project.SetupCommand
+	}
+	if project.AutoSetup != nil {
+		global.AutoSetup = project.AutoSetup
 	}
 	if len(project.Symlinks) > 0 {
 		global.Symlinks = project.Symlinks
@@ -186,6 +200,9 @@ func mergeLocal(base, local *Config) {
 	}
 	if local.SetupCommand != "" {
 		base.SetupCommand = local.SetupCommand
+	}
+	if local.AutoSetup != nil {
+		base.AutoSetup = local.AutoSetup
 	}
 	if len(local.Symlinks) > 0 {
 		base.Symlinks = local.Symlinks

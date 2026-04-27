@@ -70,6 +70,11 @@ const projectConfigTemplate = `# sarj per-project configuration
 # Command to run after creating a worktree (e.g., install dependencies).
 # setup_command = "make setup"
 
+# Skip the setup command during sarj create by default — useful when
+# running setup yourself via a dedicated tmux window. Defaults to true
+# (run setup); the --no-setup flag still applies on top.
+# auto_setup = false
+
 # Files and directories to symlink from the main worktree into new ones.
 # symlinks = [
 #     ".env",
@@ -91,6 +96,9 @@ const localConfigTemplate = `# sarj local configuration (per-user, per-project)
 
 # Override the setup command for your local environment.
 # setup_command = "make setup-local"
+
+# Override whether sarj create runs the setup command automatically.
+# auto_setup = false
 
 # Override symlinks — replaces the project symlinks entirely.
 # symlinks = [".env"]
