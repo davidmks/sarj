@@ -1,6 +1,7 @@
 package git_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -25,6 +26,10 @@ func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 	f.lastCmd = name
 	f.lastArgs = args
 	return f.out, f.err
+}
+
+func (f *fakeRunner) RunContext(_ context.Context, name string, args ...string) (string, error) {
+	return f.Run(name, args...)
 }
 
 func (f *fakeRunner) RunInteractive(_ string, _ ...string) error {

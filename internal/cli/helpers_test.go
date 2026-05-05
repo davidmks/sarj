@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,6 +34,10 @@ func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+func (f *fakeRunner) RunContext(_ context.Context, name string, args ...string) (string, error) {
+	return f.Run(name, args...)
 }
 
 func (f *fakeRunner) RunInteractive(name string, args ...string) error {

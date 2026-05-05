@@ -2,6 +2,7 @@
 package exec
 
 import (
+	"context"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -13,6 +14,11 @@ import (
 type Runner interface {
 	// Run executes a command and returns its combined stdout/stderr output.
 	Run(name string, args ...string) (string, error)
+
+	// RunContext is like Run but bounded by ctx. When ctx is canceled or its
+	// deadline passes, the underlying process is killed and the call returns
+	// whatever output was produced along with the context error.
+	RunContext(ctx context.Context, name string, args ...string) (string, error)
 
 	// RunInteractive connects the command's stdin/stdout/stderr to the
 	// terminal — used for things like tmux attach that need a live TTY.
@@ -27,7 +33,12 @@ type DefaultRunner struct {
 
 // Run executes a command and returns its trimmed output.
 func (r *DefaultRunner) Run(name string, args ...string) (string, error) {
-	cmd := osexec.Command(name, args...)
+	return r.RunContext(context.Background(), name, args...)
+}
+
+// RunContext executes a command bounded by ctx and returns its trimmed output.
+func (r *DefaultRunner) RunContext(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := osexec.CommandContext(ctx, name, args...)
 	if r.Dir != "" {
 		cmd.Dir = r.Dir
 	}
