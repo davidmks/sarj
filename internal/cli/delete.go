@@ -14,13 +14,12 @@ import (
 )
 
 func newDeleteCmd(r exec.Runner) *cobra.Command {
-	var deleteBranch bool
-	var keepBranch bool
+	var deleteBranch, keepBranch, yes bool
 
 	cmd := &cobra.Command{
-		Use:   "delete [name]",
-		Short: "Remove a worktree and optionally its branch",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "delete [name...]",
+		Short: "Remove one or more worktrees and optionally their branches",
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			in := bufio.NewReader(cmd.InOrStdin())
 
@@ -29,61 +28,52 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 				return fmt.Errorf("listing worktrees: %w", err)
 			}
 
-			target, err := resolveWorktree(wts, args)
+			targets, err := resolveTargets(wts, args)
 			if err != nil {
 				return err
 			}
-
-			wt, name := target.wt, target.name
-
-			if target.confirm && !promptYesNo(fmt.Sprintf("Delete worktree '%s'?", name), in) {
+			if len(targets) == 0 {
 				return nil
+			}
+
+			// With -y and no explicit branch flag, keep branches by default.
+			if yes && !deleteBranch && !keepBranch {
+				keepBranch = true
+			}
+
+			// cwd-inferred deletes (zero-arg) prompt for confirmation unless -y.
+			if len(targets) == 1 && targets[0].confirm && !yes {
+				if !promptYesNo(fmt.Sprintf("Delete worktree '%s'?", targets[0].name), in) {
+					return nil
+				}
 			}
 
 			if err := os.Chdir(worktree.MainPath(wts)); err != nil {
 				return fmt.Errorf("changing to main worktree: %w", err)
 			}
 
-			fmt.Fprintf(os.Stderr, "Removing worktree...\n")
-			if err := worktree.Delete(r, worktree.DeleteOpts{
-				Path:     wt.Path,
-				Progress: os.Stderr,
-			}); err != nil {
-				return err
-			}
+			targets = deferCurrentSession(r, targets)
 
-			if !deleteBranch && !keepBranch {
-				deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", wt.Branch), in)
-			}
-
-			branchStatus := "branch kept"
-			if deleteBranch {
-				if _, err := r.Run("git", "branch", "-D", wt.Branch); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: could not delete branch: %v\n", err)
-				} else {
-					branchStatus = "branch deleted"
+			opts := deleteOpts{deleteBranch: deleteBranch, keepBranch: keepBranch, yes: yes}
+			var failed []string
+			for _, t := range targets {
+				if err := deleteOne(cmd, r, t, opts, in); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: %s: %v\n", t.name, err) //nolint:errcheck
+					failed = append(failed, t.name)
 				}
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", wt.Branch, branchStatus) //nolint:errcheck
-
-			// Session kill is last — it sends SIGHUP to the current process when
-			// run from inside the target session. All cleanup is already done above,
-			// so if the switch fails (no other session) the kill just closes the terminal.
-			sessionName := tmux.SanitizeName(name)
-			if tmux.IsInsideSession() && tmux.CurrentSessionName(r) == sessionName {
-				_ = tmux.SwitchToLastSession(r)
+			if len(failed) > 0 {
+				return fmt.Errorf("%d of %d worktrees failed: %s",
+					len(failed), len(targets), strings.Join(failed, ", "))
 			}
-			if err := tmux.KillSession(r, name); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not kill tmux session: %v\n", err)
-			}
-
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVarP(&deleteBranch, "delete-branch", "D", false, "also delete the branch")
 	cmd.Flags().BoolVar(&keepBranch, "keep-branch", false, "keep the branch (no prompt)")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip prompts (defaults to keep-branch)")
 	cmd.MarkFlagsMutuallyExclusive("delete-branch", "keep-branch")
 
 	cmd.ValidArgsFunction = completeWorktreeNames(r)
@@ -97,19 +87,40 @@ type deleteTarget struct {
 	confirm bool
 }
 
-// resolveWorktree resolves the target worktree from an explicit name or the
-// current working directory. When inferred from cwd, confirm is true so the
-// caller can prompt before proceeding.
-func resolveWorktree(wts []worktree.Worktree, args []string) (deleteTarget, error) {
-	if len(args) == 1 {
-		name := args[0]
-		wt := worktree.FindByName(wts, name)
-		if wt == nil {
-			return deleteTarget{}, fmt.Errorf("worktree %s not found", name)
+type deleteOpts struct {
+	deleteBranch bool
+	keepBranch   bool
+	yes          bool
+}
+
+// resolveTargets resolves all delete targets up front so unknown names fail
+// before any side effect. Zero args falls back to cwd inference.
+func resolveTargets(wts []worktree.Worktree, args []string) ([]deleteTarget, error) {
+	if len(args) == 0 {
+		t, err := resolveFromCwd(wts)
+		if err != nil {
+			return nil, err
 		}
-		return deleteTarget{wt: wt, name: name}, nil
+		return []deleteTarget{t}, nil
 	}
 
+	targets := make([]deleteTarget, 0, len(args))
+	var unknown []string
+	for _, name := range args {
+		wt := worktree.FindByName(wts, name)
+		if wt == nil {
+			unknown = append(unknown, name)
+			continue
+		}
+		targets = append(targets, deleteTarget{wt: wt, name: name})
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("worktree not found: %s", strings.Join(unknown, ", "))
+	}
+	return targets, nil
+}
+
+func resolveFromCwd(wts []worktree.Worktree) (deleteTarget, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return deleteTarget{}, fmt.Errorf("getting current directory: %w", err)
@@ -128,9 +139,66 @@ func resolveWorktree(wts []worktree.Worktree, args []string) (deleteTarget, erro
 	return deleteTarget{wt: wt, name: filepath.Base(wt.Path), confirm: true}, nil
 }
 
+// deferCurrentSession moves any target matching the current tmux session to the
+// end of the queue so prior deletes complete before the SIGHUP-on-current-kill.
+func deferCurrentSession(r exec.Runner, targets []deleteTarget) []deleteTarget {
+	if !tmux.IsInsideSession() {
+		return targets
+	}
+	current := tmux.CurrentSessionName(r)
+	head := make([]deleteTarget, 0, len(targets))
+	var tail []deleteTarget
+	for _, t := range targets {
+		if tmux.SanitizeName(t.name) == current {
+			tail = append(tail, t)
+		} else {
+			head = append(head, t)
+		}
+	}
+	return append(head, tail...)
+}
+
+func deleteOne(cmd *cobra.Command, r exec.Runner, t deleteTarget, opts deleteOpts, in *bufio.Reader) error {
+	fmt.Fprintf(os.Stderr, "Removing worktree %s...\n", t.name) //nolint:errcheck
+	if err := worktree.Delete(r, worktree.DeleteOpts{
+		Path:     t.wt.Path,
+		Progress: os.Stderr,
+	}); err != nil {
+		return err
+	}
+
+	deleteBranch := opts.deleteBranch
+	if !deleteBranch && !opts.keepBranch && !opts.yes {
+		deleteBranch = promptYesNo(fmt.Sprintf("Delete branch '%s'?", t.wt.Branch), in)
+	}
+
+	branchStatus := "branch kept"
+	if deleteBranch {
+		if _, err := r.Run("git", "branch", "-D", t.wt.Branch); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not delete branch: %v\n", err) //nolint:errcheck
+		} else {
+			branchStatus = "branch deleted"
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", t.wt.Branch, branchStatus) //nolint:errcheck
+
+	// Session kill is last — it sends SIGHUP to the current process when run
+	// from inside the target session. With multi-arg, the current-session
+	// target was deferred to the end so prior deletes already finished.
+	sessionName := tmux.SanitizeName(t.name)
+	if tmux.IsInsideSession() && tmux.CurrentSessionName(r) == sessionName {
+		_ = tmux.SwitchToLastSession(r)
+	}
+	if err := tmux.KillSession(r, t.name); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not kill tmux session: %v\n", err) //nolint:errcheck
+	}
+	return nil
+}
+
 // promptYesNo asks a y/N question on stderr and reads from in. Default is no.
 func promptYesNo(question string, in *bufio.Reader) bool {
-	fmt.Fprintf(os.Stderr, "%s (y/N) ", question)
+	fmt.Fprintf(os.Stderr, "%s (y/N) ", question) //nolint:errcheck
 	answer, _ := in.ReadString('\n')
 	return strings.TrimSpace(strings.ToLower(answer)) == "y"
 }
