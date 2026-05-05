@@ -586,7 +586,7 @@ func TestDeleteCmd_NotFound(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "ghost", "--keep-branch"})
 
 	err := cmd.Execute()
-	assert.ErrorContains(t, err, "worktree ghost not found")
+	assert.ErrorContains(t, err, "worktree not found: ghost")
 }
 
 func TestDeleteCmd_StaleEntry(t *testing.T) {
@@ -861,6 +861,112 @@ func TestDeleteCmd_InferFromCwd_NotInWorktree(t *testing.T) {
 
 	err := cmd.Execute()
 	assert.ErrorContains(t, err, "not inside a worktree")
+}
+
+func TestDeleteCmd_MultiArg(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	wtA := filepath.Join(dir, "wt", "feat-a")
+	wtB := filepath.Join(dir, "wt", "feat-b")
+	fakeWorktreeDir(t, wtA)
+	fakeWorktreeDir(t, wtB)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtA + "\nHEAD def\nbranch refs/heads/feat-a\n\n" +
+		"worktree " + wtB + "\nHEAD ghi\nbranch refs/heads/feat-b\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"delete", "feat-a", "feat-b", "-y"})
+
+	require.NoError(t, cmd.Execute())
+	out := buf.String()
+	assert.Contains(t, out, "Deleted worktree feat-a")
+	assert.Contains(t, out, "Deleted worktree feat-b")
+	assert.False(t, r.hasCall("branch -D"), "-y defaults to keep-branch")
+}
+
+func TestDeleteCmd_MultiArg_UnknownNameAborts(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	wtA := filepath.Join(dir, "wt", "feat-a")
+	fakeWorktreeDir(t, wtA)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtA + "\nHEAD def\nbranch refs/heads/feat-a\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "feat-a", "ghost", "-y"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ghost")
+	assert.False(t, r.hasCall("worktree remove"), "no side effect on unknown name")
+}
+
+func TestDeleteCmd_MultiArg_PartialFailure(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	wtA := filepath.Join(dir, "wt", "feat-a")
+	wtB := filepath.Join(dir, "wt", "feat-b")
+	fakeWorktreeDir(t, wtA)
+	fakeWorktreeDir(t, wtB)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtA + "\nHEAD def\nbranch refs/heads/feat-a\n\n" +
+		"worktree " + wtB + "\nHEAD ghi\nbranch refs/heads/feat-b\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain":      {out: porcelain},
+		"tmux has-session":                   {err: fmt.Errorf("no session")},
+		"git worktree remove --force " + wtA: {err: fmt.Errorf("locked worktree")},
+		"git worktree":                       {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "feat-a", "feat-b", "-y"})
+
+	err := cmd.Execute()
+	require.Error(t, err, "partial failure must return non-zero")
+	assert.Contains(t, err.Error(), "feat-a")
+	assert.True(t, r.hasCall("worktree remove --force "+wtB), "feat-b still attempted after feat-a failed")
+}
+
+func TestDeleteCmd_YesFlag_DeleteBranch(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	wtPath := filepath.Join(dir, "wt", "my-feature")
+	fakeWorktreeDir(t, wtPath)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/my-feature\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"git branch":                    {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "my-feature", "-y", "-D"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, r.hasCall("branch -D my-feature"), "-y -D should delete the branch")
 }
 
 func TestDeleteCmd_NoSwitchWhenDifferentSession(t *testing.T) {
