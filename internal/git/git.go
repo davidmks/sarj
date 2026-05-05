@@ -2,6 +2,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -129,13 +130,13 @@ func Upstream(r CommandRunner, path string) (remote, branch string, err error) {
 	}
 	ref := strings.TrimSpace(out)
 	if ref == "" {
-		return "", "", fmt.Errorf("empty upstream ref")
+		return "", "", errors.New("empty upstream ref")
 	}
-	idx := strings.Index(ref, "/")
-	if idx < 0 {
+	remote, branch, ok := strings.Cut(ref, "/")
+	if !ok {
 		return "", ref, nil
 	}
-	return ref[:idx], ref[idx+1:], nil
+	return remote, branch, nil
 }
 
 // AheadBehind returns the number of commits HEAD is ahead and behind upstream
