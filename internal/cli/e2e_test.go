@@ -149,7 +149,7 @@ func TestIntegration_ListEnriched(t *testing.T) {
 	assert.Equal(t, "feat", e["name"])
 	assert.Equal(t, "feat", e["branch"])
 	assert.Equal(t, true, e["dirty"], "uncommitted file should mark dirty")
-	assert.Nil(t, e["status"], "status null in PR 1")
+	assert.Nil(t, e["status"], "status null when no [status] hook is configured")
 
 	head := e["head"].(map[string]any)
 	assert.Equal(t, "local commit", head["subject"])
@@ -161,4 +161,47 @@ func TestIntegration_ListEnriched(t *testing.T) {
 	assert.Equal(t, "feat", up["branch"])
 	assert.Equal(t, float64(1), up["ahead"], "1 local commit ahead of origin")
 	assert.Equal(t, float64(0), up["behind"])
+}
+
+// TestIntegration_ListWithStatusHook exercises the full chain: a real
+// .sarj.toml with [status] command, real git worktrees, real shell exec
+// of the templated hook, and real list rendering. Catches regressions at
+// the seams between config, status, and list that fakeRunner can't see.
+func TestIntegration_ListWithStatusHook(t *testing.T) {
+	isolateConfig(t)
+
+	repoPath := initTestRepo(t)
+	r := &exec.DefaultRunner{Dir: repoPath}
+
+	wtBase, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	wtPath := filepath.Join(wtBase, "feat")
+	_, err = r.Run("git", "worktree", "add", "-b", "feat", wtPath)
+	require.NoError(t, err)
+
+	// Hook echoes the branch name so we can verify templating end-to-end.
+	cfg := "[status]\ncommand = \"echo merged-{{.Branch}}\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(repoPath, ".sarj.toml"), []byte(cfg), 0o600))
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list", "-o", "json"})
+	require.NoError(t, cmd.Execute())
+
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "merged-feat", entries[0]["status"])
+
+	// Text output should now show the STATUS column.
+	buf.Reset()
+	cmd2 := cli.NewRootCmd("test", r)
+	cmd2.SetOut(buf)
+	cmd2.SetErr(new(bytes.Buffer))
+	cmd2.SetArgs([]string{"list"})
+	require.NoError(t, cmd2.Execute())
+	assert.Contains(t, buf.String(), "STATUS")
+	assert.Contains(t, buf.String(), "merged-feat")
 }
