@@ -4,6 +4,7 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -93,4 +94,71 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 	rMain := &exec.DefaultRunner{Dir: repoPath}
 	_, err = rMain.Run("git", "show-ref", "--verify", "--quiet", "refs/heads/test-wt")
 	assert.Error(t, err, "branch should be deleted")
+}
+
+// TestIntegration_ListEnriched exercises the full list pipeline against real
+// git output: dirty detection, head info parsing, upstream resolution, and
+// ahead/behind counting. Catches drift in any of those parsers.
+func TestIntegration_ListEnriched(t *testing.T) {
+	isolateConfig(t)
+
+	// Bare repo serves as origin so the worktree branch can have an upstream.
+	remotePath, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	rRemote := &exec.DefaultRunner{Dir: remotePath}
+	_, err = rRemote.Run("git", "init", "--bare", "--initial-branch=main")
+	require.NoError(t, err)
+
+	repoPath := initTestRepo(t)
+	r := &exec.DefaultRunner{Dir: repoPath}
+	_, err = r.Run("git", "remote", "add", "origin", remotePath)
+	require.NoError(t, err)
+	_, err = r.Run("git", "push", "-u", "origin", "main")
+	require.NoError(t, err)
+
+	wtBase, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	wtPath := filepath.Join(wtBase, "feat")
+	_, err = r.Run("git", "worktree", "add", "-b", "feat", wtPath)
+	require.NoError(t, err)
+
+	rWt := &exec.DefaultRunner{Dir: wtPath}
+	_, err = rWt.Run("git", "push", "-u", "origin", "feat")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(wtPath, "work.txt"), []byte("local work"), 0o600))
+	_, err = rWt.Run("git", "add", ".")
+	require.NoError(t, err)
+	_, err = rWt.Run("git", "commit", "-m", "local commit")
+	require.NoError(t, err)
+
+	// Uncommitted file → dirty=true.
+	require.NoError(t, os.WriteFile(filepath.Join(wtPath, "uncommitted.txt"), []byte("dirty"), 0o600))
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list", "-o", "json"})
+	require.NoError(t, cmd.Execute())
+
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entries))
+	require.Len(t, entries, 1, "main filtered out, feat remains")
+
+	e := entries[0]
+	assert.Equal(t, "feat", e["name"])
+	assert.Equal(t, "feat", e["branch"])
+	assert.Equal(t, true, e["dirty"], "uncommitted file should mark dirty")
+	assert.Nil(t, e["status"], "status null in PR 1")
+
+	head := e["head"].(map[string]any)
+	assert.Equal(t, "local commit", head["subject"])
+	assert.NotEmpty(t, head["sha"])
+	assert.NotEmpty(t, head["date"])
+
+	up := e["upstream"].(map[string]any)
+	assert.Equal(t, "origin", up["remote"])
+	assert.Equal(t, "feat", up["branch"])
+	assert.Equal(t, float64(1), up["ahead"], "1 local commit ahead of origin")
+	assert.Equal(t, float64(0), up["behind"])
 }
