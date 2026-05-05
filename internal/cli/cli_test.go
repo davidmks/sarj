@@ -1105,3 +1105,148 @@ func TestDeleteCmd_NoSwitchWhenDifferentSession(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	assert.False(t, r.hasCall("switch-client"))
 }
+
+// writeStatusConfig appends a [status] section to the project config in dir.
+func writeStatusConfig(t *testing.T, dir, command string) {
+	t.Helper()
+	path := filepath.Join(dir, ".sarj.toml")
+	existing, err := os.ReadFile(path)
+	require.NoError(t, err)
+	added := fmt.Sprintf("\n[status]\ncommand = %q\n", command)
+	require.NoError(t, os.WriteFile(path, append(existing, []byte(added)...), 0o600))
+}
+
+func TestDeleteCmd_StateRequiresHook(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"delete", "--state", "merged", "-y"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--state")
+	assert.Contains(t, err.Error(), "[status]")
+}
+
+func TestDeleteCmd_StateFiltersTargets(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	writeStatusConfig(t, dir, "check {{.Branch}}")
+
+	wtA := filepath.Join(dir, "wt", "a")
+	wtB := filepath.Join(dir, "wt", "b")
+	wtC := filepath.Join(dir, "wt", "c")
+	fakeWorktreeDir(t, wtA)
+	fakeWorktreeDir(t, wtB)
+	fakeWorktreeDir(t, wtC)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtA + "\nHEAD a1\nbranch refs/heads/a\n\n" +
+		"worktree " + wtB + "\nHEAD b1\nbranch refs/heads/b\n\n" +
+		"worktree " + wtC + "\nHEAD c1\nbranch refs/heads/c\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"sh -c check a":                 {out: "merged"},
+		"sh -c check b":                 {out: "merged"},
+		"sh -c check c":                 {out: "open"},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "--state", "merged", "-y"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, r.hasCall("worktree remove --force "+wtA), "a should be deleted")
+	assert.True(t, r.hasCall("worktree remove --force "+wtB), "b should be deleted")
+	assert.False(t, r.hasCall("worktree remove --force "+wtC), "c (open) should not be deleted")
+}
+
+func TestDeleteCmd_StateMultipleValues(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	writeStatusConfig(t, dir, "check {{.Branch}}")
+
+	wtA := filepath.Join(dir, "wt", "a")
+	wtB := filepath.Join(dir, "wt", "b")
+	wtC := filepath.Join(dir, "wt", "c")
+	fakeWorktreeDir(t, wtA)
+	fakeWorktreeDir(t, wtB)
+	fakeWorktreeDir(t, wtC)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtA + "\nHEAD a1\nbranch refs/heads/a\n\n" +
+		"worktree " + wtB + "\nHEAD b1\nbranch refs/heads/b\n\n" +
+		"worktree " + wtC + "\nHEAD c1\nbranch refs/heads/c\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"sh -c check a":                 {out: "merged"},
+		"sh -c check b":                 {out: "closed"},
+		"sh -c check c":                 {out: "open"},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"delete", "--state", "merged,closed", "-y"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, r.hasCall("worktree remove --force "+wtA))
+	assert.True(t, r.hasCall("worktree remove --force "+wtB))
+	assert.False(t, r.hasCall("worktree remove --force "+wtC))
+}
+
+func TestDeleteCmd_StateWithNamedArgs(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir := newRepoDir(t)
+	writeStatusConfig(t, dir, "check {{.Branch}}")
+
+	wtA := filepath.Join(dir, "wt", "a")
+	wtB := filepath.Join(dir, "wt", "b")
+	wtC := filepath.Join(dir, "wt", "c")
+	fakeWorktreeDir(t, wtA)
+	fakeWorktreeDir(t, wtB)
+	fakeWorktreeDir(t, wtC)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtA + "\nHEAD a1\nbranch refs/heads/a\n\n" +
+		"worktree " + wtB + "\nHEAD b1\nbranch refs/heads/b\n\n" +
+		"worktree " + wtC + "\nHEAD c1\nbranch refs/heads/c\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"sh -c check a":                 {out: "merged"},
+		"sh -c check b":                 {out: "open"},
+		"sh -c check c":                 {out: "merged"},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(new(bytes.Buffer))
+	cmd.SetErr(new(bytes.Buffer))
+	// Named args narrow the candidate pool: only a and b are considered,
+	// then state filters to merged. c is not considered even though merged.
+	cmd.SetArgs([]string{"delete", "a", "b", "--state", "merged", "-y"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, r.hasCall("worktree remove --force "+wtA))
+	assert.False(t, r.hasCall("worktree remove --force "+wtB), "b is open, filtered out")
+	assert.False(t, r.hasCall("worktree remove --force "+wtC), "c not in named args")
+}

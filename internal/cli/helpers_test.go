@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 type fakeRunner struct {
+	mu        sync.Mutex
 	calls     []string
 	responses map[string]response
 }
@@ -24,7 +26,9 @@ type response struct {
 // Matching tries the full command, then progressively shorter prefixes.
 func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 	call := name + " " + strings.Join(args, " ")
+	f.mu.Lock()
 	f.calls = append(f.calls, call)
+	f.mu.Unlock()
 
 	parts := strings.Fields(call)
 	for i := len(parts); i > 0; i-- {
@@ -41,7 +45,9 @@ func (f *fakeRunner) RunContext(_ context.Context, name string, args ...string) 
 }
 
 func (f *fakeRunner) RunInteractive(name string, args ...string) error {
+	f.mu.Lock()
 	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
+	f.mu.Unlock()
 	return nil
 }
 
@@ -50,6 +56,8 @@ func (f *fakeRunner) hasCall(substr string) bool {
 }
 
 func (f *fakeRunner) indexOfCall(substr string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for i, c := range f.calls {
 		if strings.Contains(c, substr) {
 			return i
