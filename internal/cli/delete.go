@@ -64,7 +64,7 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 			}
 
 			if len(failed) > 0 {
-				return fmt.Errorf("%d of %d worktree(s) failed: %s",
+				return fmt.Errorf("%d of %d worktrees failed: %s",
 					len(failed), len(targets), strings.Join(failed, ", "))
 			}
 			return nil
