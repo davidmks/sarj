@@ -28,9 +28,9 @@ type listEntry struct {
 }
 
 type headInfo struct {
-	SHA     string    `json:"sha"`
-	Subject string    `json:"subject"`
-	Date    time.Time `json:"date"`
+	SHA     string     `json:"sha"`
+	Subject string     `json:"subject"`
+	Date    *time.Time `json:"date"`
 }
 
 type upstreamInfo struct {
@@ -76,16 +76,23 @@ func newListCmd(r exec.Runner) *cobra.Command {
 				})
 			}
 
-			stderr := cmd.ErrOrStderr()
+			warnings := make([][]string, len(entries))
 			var wg sync.WaitGroup
 			for i := range entries {
 				wg.Add(1)
-				go func(e *listEntry) {
+				go func(i int) {
 					defer wg.Done()
-					enrichOne(r, e, stderr)
-				}(&entries[i])
+					warnings[i] = enrichOne(r, &entries[i])
+				}(i)
 			}
 			wg.Wait()
+
+			stderr := cmd.ErrOrStderr()
+			for _, ws := range warnings {
+				for _, w := range ws {
+					fmt.Fprintln(stderr, w) //nolint:errcheck
+				}
+			}
 
 			if sessionSet := loadTmuxSessions(r); sessionSet != nil {
 				for i := range entries {
@@ -107,34 +114,40 @@ func newListCmd(r exec.Runner) *cobra.Command {
 }
 
 // enrichOne fills in dirty, head subject/date, upstream, and ahead/behind for
-// an already-base-populated entry. Per-call git failures are logged to stderr
-// and leave fields at their zero values.
-func enrichOne(r exec.Runner, e *listEntry, stderr io.Writer) {
+// an already-base-populated entry. Per-call git failures are returned as
+// warnings (caller drains them after wg.Wait); failed fields stay at zero.
+func enrichOne(r exec.Runner, e *listEntry) []string {
+	var warnings []string
+	warn := func(err error) {
+		warnings = append(warnings, fmt.Sprintf("warning: %s: %v", e.Name, err))
+	}
+
 	if dirty, err := git.Dirty(r, e.Path); err != nil {
-		fmt.Fprintf(stderr, "warning: %s: %v\n", e.Name, err) //nolint:errcheck
+		warn(err)
 	} else {
 		e.Dirty = dirty
 	}
 
 	if subject, date, err := git.HeadInfo(r, e.Path); err != nil {
-		fmt.Fprintf(stderr, "warning: %s: %v\n", e.Name, err) //nolint:errcheck
+		warn(err)
 	} else {
 		e.Head.Subject = subject
-		e.Head.Date = date
+		e.Head.Date = &date
 	}
 
 	remote, branch, err := git.Upstream(r, e.Path)
 	if err != nil {
-		return
+		return warnings
 	}
 	up := &upstreamInfo{Remote: remote, Branch: branch}
 	if ahead, behind, err := git.AheadBehind(r, e.Path, remote+"/"+branch); err != nil {
-		fmt.Fprintf(stderr, "warning: %s: %v\n", e.Name, err) //nolint:errcheck
+		warn(err)
 	} else {
 		up.Ahead = ahead
 		up.Behind = behind
 	}
 	e.Upstream = up
+	return warnings
 }
 
 // loadTmuxSessions returns a set of active tmux session names, or nil if tmux
@@ -167,9 +180,6 @@ func printText(w io.Writer, entries []listEntry) error {
 }
 
 func printJSON(w io.Writer, entries []listEntry) error {
-	if entries == nil {
-		entries = []listEntry{}
-	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(entries)
@@ -182,11 +192,11 @@ func formatAheadBehind(u *upstreamInfo) string {
 	return fmt.Sprintf("+%d/-%d", u.Ahead, u.Behind)
 }
 
-func formatAge(t time.Time) string {
-	if t.IsZero() {
+func formatAge(t *time.Time) string {
+	if t == nil || t.IsZero() {
 		return "?"
 	}
-	d := time.Since(t)
+	d := time.Since(*t)
 	switch {
 	case d < time.Minute:
 		return "now"
