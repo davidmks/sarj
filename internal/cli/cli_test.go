@@ -1113,7 +1113,7 @@ func writeStatusConfig(t *testing.T, dir, command string) {
 	existing, err := os.ReadFile(path)
 	require.NoError(t, err)
 	added := fmt.Sprintf("\n[status]\ncommand = %q\n", command)
-	require.NoError(t, os.WriteFile(path, append(existing, []byte(added)...), 0o600))
+	require.NoError(t, os.WriteFile(path, append(existing, []byte(added)...), 0o600)) //nolint:gosec // test helper, path is t.TempDir()
 }
 
 func TestDeleteCmd_StateRequiresHook(t *testing.T) {
