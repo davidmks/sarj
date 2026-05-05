@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -211,6 +212,137 @@ func TestListCmd_Empty(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 	assert.Len(t, lines, 1, "only header row expected")
+}
+
+func TestListCmd_NewColumns(t *testing.T) {
+	isolateConfig(t)
+	porcelain := "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/feat\nHEAD def\nbranch refs/heads/feat\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain":                 {out: porcelain},
+		"tmux list-sessions":                            {out: ""},
+		"git -C /wt/feat status --porcelain":            {out: " M file.go\n"},
+		"git -C /wt/feat log":                           {out: "2026-05-04T10:23:00Z\nfix things\n"},
+		"git -C /wt/feat rev-parse":                     {out: "origin/feat\n"},
+		"git -C /wt/feat rev-list --left-right --count": {out: "3\t1\n"},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list"})
+	require.NoError(t, cmd.Execute())
+
+	out := buf.String()
+	assert.Contains(t, out, "AHEAD/BEHIND")
+	assert.Contains(t, out, "AGE")
+	assert.Contains(t, out, "DIRTY")
+	assert.Contains(t, out, "+3/-1")
+	assert.Contains(t, out, "*")
+}
+
+func TestListCmd_NoUpstream(t *testing.T) {
+	isolateConfig(t)
+	porcelain := "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/scratch\nHEAD def\nbranch refs/heads/scratch\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux list-sessions":            {out: ""},
+		"git -C /wt/scratch rev-parse":  {err: fmt.Errorf("no upstream")},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list"})
+	require.NoError(t, cmd.Execute())
+
+	assert.Contains(t, buf.String(), "-/-")
+}
+
+func TestListCmd_JSON(t *testing.T) {
+	isolateConfig(t)
+	porcelain := "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/feat\nHEAD def123\nbranch refs/heads/feat\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain":                 {out: porcelain},
+		"tmux list-sessions":                            {out: "feat"},
+		"git -C /wt/feat status --porcelain":            {out: ""},
+		"git -C /wt/feat log":                           {out: "2026-05-04T10:23:00Z\nfix things\n"},
+		"git -C /wt/feat rev-parse":                     {out: "origin/feat\n"},
+		"git -C /wt/feat rev-list --left-right --count": {out: "0\t0\n"},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list", "-o", "json"})
+	require.NoError(t, cmd.Execute())
+
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entries))
+	require.Len(t, entries, 1)
+	e := entries[0]
+	assert.Equal(t, "feat", e["name"])
+	assert.Equal(t, "/wt/feat", e["path"])
+	assert.Equal(t, "feat", e["branch"])
+	assert.Equal(t, false, e["dirty"])
+	assert.Nil(t, e["status"], "status null in PR 1")
+
+	head := e["head"].(map[string]any)
+	assert.Equal(t, "def123", head["sha"])
+	assert.Equal(t, "fix things", head["subject"])
+	assert.Equal(t, "2026-05-04T10:23:00Z", head["date"])
+
+	up := e["upstream"].(map[string]any)
+	assert.Equal(t, "origin", up["remote"])
+	assert.Equal(t, "feat", up["branch"])
+
+	tmuxObj := e["tmux"].(map[string]any)
+	assert.Equal(t, "feat", tmuxObj["session"])
+	assert.Equal(t, true, tmuxObj["active"])
+}
+
+func TestListCmd_JSON_NullableFields(t *testing.T) {
+	isolateConfig(t)
+	porcelain := "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/foo\nHEAD def\nbranch refs/heads/foo\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux list-sessions":            {err: fmt.Errorf("tmux not running")},
+		"git -C /wt/foo rev-parse":      {err: fmt.Errorf("no upstream")},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list", "-o", "json"})
+	require.NoError(t, cmd.Execute())
+
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entries))
+	require.Len(t, entries, 1)
+	assert.Nil(t, entries[0]["upstream"])
+	assert.Nil(t, entries[0]["tmux"])
+	assert.Nil(t, entries[0]["status"])
+}
+
+func TestListCmd_InvalidOutputFlag(t *testing.T) {
+	isolateConfig(t)
+	r := &fakeRunner{}
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"list", "-o", "xml"})
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid -o value")
 }
 
 func TestCreateCmd(t *testing.T) {
