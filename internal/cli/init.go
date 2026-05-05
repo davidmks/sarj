@@ -87,6 +87,15 @@ const projectConfigTemplate = `# sarj per-project configuration
 # [[tmux.windows]]
 # name = "dev"
 # command = "make dev"
+
+# Status hook: a forge-agnostic shell command, run per worktree, whose
+# trimmed stdout becomes the worktree's "status". Templated with
+# {{.Branch}} and {{.Path}}. Non-zero exit, empty output, or timeout
+# (~10s) all map to "unknown". When configured, sarj list shows a
+# STATUS column and JSON output, and sarj delete --state filters by
+# the returned token.
+# [status]
+# command = "gh pr view {{.Branch}} --json state -q .state 2>/dev/null"
 `
 
 const localConfigTemplate = `# sarj local configuration (per-user, per-project)
@@ -110,6 +119,11 @@ const localConfigTemplate = `# sarj local configuration (per-user, per-project)
 # [[tmux.windows]]
 # name = "server"
 # command = "make dev"
+
+# Override the project status hook (e.g., to use a different forge or
+# add private filtering). See .sarj.toml for the full description.
+# [status]
+# command = "gh pr view {{.Branch}} --json state -q .state 2>/dev/null"
 `
 
 func newInitCmd(r exec.Runner) *cobra.Command {
