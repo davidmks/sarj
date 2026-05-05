@@ -335,6 +335,118 @@ func TestListCmd_JSON_NullableFields(t *testing.T) {
 	assert.Nil(t, entries[0]["status"])
 }
 
+func TestListCmd_StatusColumn(t *testing.T) {
+	isolateConfig(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"),
+		[]byte("[status]\ncommand = \"echo merged\"\n"), 0o600))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/feat\nHEAD def\nbranch refs/heads/feat\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain":                 {out: porcelain},
+		"tmux list-sessions":                            {out: ""},
+		"git -C /wt/feat status --porcelain":            {out: ""},
+		"git -C /wt/feat log":                           {out: "2026-05-04T10:23:00Z\nfix things\n"},
+		"git -C /wt/feat rev-parse":                     {out: "origin/feat\n"},
+		"git -C /wt/feat rev-list --left-right --count": {out: "0\t0\n"},
+		"sh -c":                                         {out: "merged"},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list"})
+	require.NoError(t, cmd.Execute())
+
+	out := buf.String()
+	assert.Contains(t, out, "STATUS")
+	assert.Contains(t, out, "merged")
+}
+
+func TestListCmd_StatusOmittedWithoutHook(t *testing.T) {
+	isolateConfig(t)
+	porcelain := "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/feat\nHEAD def\nbranch refs/heads/feat\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux list-sessions":            {out: ""},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list"})
+	require.NoError(t, cmd.Execute())
+
+	assert.NotContains(t, buf.String(), "STATUS")
+}
+
+func TestListCmd_JSON_StatusPopulated(t *testing.T) {
+	isolateConfig(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"),
+		[]byte("[status]\ncommand = \"echo merged\"\n"), 0o600))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/feat\nHEAD def123\nbranch refs/heads/feat\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain":                 {out: porcelain},
+		"tmux list-sessions":                            {out: ""},
+		"git -C /wt/feat status --porcelain":            {out: ""},
+		"git -C /wt/feat log":                           {out: "2026-05-04T10:23:00Z\nfix things\n"},
+		"git -C /wt/feat rev-parse":                     {out: "origin/feat\n"},
+		"git -C /wt/feat rev-list --left-right --count": {out: "0\t0\n"},
+		"sh -c":                                         {out: "merged"},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list", "-o", "json"})
+	require.NoError(t, cmd.Execute())
+
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "merged", entries[0]["status"])
+}
+
+func TestListCmd_JSON_StatusUnknownOnFailure(t *testing.T) {
+	isolateConfig(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"),
+		[]byte("[status]\ncommand = \"some-cmd\"\n"), 0o600))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree /wt/feat\nHEAD def\nbranch refs/heads/feat\n\n"
+
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux list-sessions":            {out: ""},
+		"git -C /wt/feat rev-parse":     {err: fmt.Errorf("no upstream")},
+		"sh -c":                         {err: fmt.Errorf("hook failed")},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{"list", "-o", "json"})
+	require.NoError(t, cmd.Execute())
+
+	var entries []map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "unknown", entries[0]["status"])
+}
+
 func TestListCmd_InvalidOutputFlag(t *testing.T) {
 	isolateConfig(t)
 	r := &fakeRunner{}

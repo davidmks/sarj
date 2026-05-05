@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +10,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/davidmks/sarj/internal/config"
 	"github.com/davidmks/sarj/internal/exec"
 	"github.com/davidmks/sarj/internal/git"
+	"github.com/davidmks/sarj/internal/status"
 	"github.com/davidmks/sarj/internal/tmux"
 	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/spf13/cobra"
@@ -61,11 +64,16 @@ func newListCmd(r exec.Runner) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mainWT, _ := git.MainWorktree(r)
+			mainPath, _ := git.MainWorktree(r)
+
+			cfg, err := loadListConfig(r, mainPath)
+			if err != nil {
+				return err
+			}
 
 			entries := make([]listEntry, 0, len(wts))
 			for _, wt := range wts {
-				if wt.Path == mainWT {
+				if wt.Path == mainPath {
 					continue
 				}
 				entries = append(entries, listEntry{
@@ -101,16 +109,47 @@ func newListCmd(r exec.Runner) *cobra.Command {
 				}
 			}
 
+			showStatus := cfg != nil && cfg.Status.Command != ""
+			if showStatus {
+				probeStatus(cmd.Context(), r, cfg.Status.Command, entries)
+			}
+
 			if output == "json" {
 				return printJSON(cmd.OutOrStdout(), entries)
 			}
-			return printText(cmd.OutOrStdout(), entries)
+			return printText(cmd.OutOrStdout(), entries, showStatus)
 		},
 	}
 
 	cmd.Flags().StringVarP(&output, "output", "o", "text", "output format: text|json")
 
 	return cmd
+}
+
+// loadListConfig loads the merged config when we're inside a repo. List used
+// to work without config; it still does — config is only needed for the
+// optional status hook, so a missing repo root resolves to a nil config.
+func loadListConfig(_ exec.Runner, repoRoot string) (*config.Config, error) {
+	if repoRoot == "" {
+		return nil, nil
+	}
+	return config.Load(repoRoot, filepath.Base(repoRoot))
+}
+
+// probeStatus runs the configured status hook for each entry in parallel and
+// fills in the Status field. Failures map to status.Unknown internally.
+func probeStatus(ctx context.Context, r exec.Runner, command string, entries []listEntry) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	items := make([]status.Item, len(entries))
+	for i, e := range entries {
+		items[i] = status.Item{Branch: e.Branch, Path: e.Path}
+	}
+	results := status.ProbeAll(ctx, r, command, items, 0)
+	for i := range entries {
+		entries[i].Status = &results[i].State
+	}
 }
 
 // enrichOne fills in dirty, head subject/date, upstream, and ahead/behind for
@@ -164,17 +203,25 @@ func loadTmuxSessions(r exec.Runner) map[string]bool {
 	return set
 }
 
-func printText(w io.Writer, entries []listEntry) error {
+func printText(w io.Writer, entries []listEntry, showStatus bool) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tBRANCH\tAHEAD/BEHIND\tAGE\tDIRTY\tTMUX") //nolint:errcheck
+	header := "NAME\tBRANCH\tAHEAD/BEHIND\tAGE\tDIRTY\tTMUX"
+	if showStatus {
+		header += "\tSTATUS"
+	}
+	fmt.Fprintln(tw, header) //nolint:errcheck
 	for _, e := range entries {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s", //nolint:errcheck
 			e.Name, e.Branch,
 			formatAheadBehind(e.Upstream),
 			formatAge(e.Head.Date),
 			formatDirty(e.Dirty),
 			formatTmux(e.Tmux),
 		)
+		if showStatus {
+			fmt.Fprintf(tw, "\t%s", formatStatus(e.Status)) //nolint:errcheck
+		}
+		fmt.Fprintln(tw) //nolint:errcheck
 	}
 	return tw.Flush()
 }
@@ -227,4 +274,11 @@ func formatTmux(t *tmuxInfo) string {
 		return "active"
 	}
 	return "-"
+}
+
+func formatStatus(s *string) string {
+	if s == nil || *s == "" {
+		return "-"
+	}
+	return *s
 }
