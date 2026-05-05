@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CommandRunner is the subset of exec.Runner that this package needs.
@@ -89,4 +90,72 @@ func CommitsBehind(r CommandRunner, local, remote string) int {
 		return 0
 	}
 	return n
+}
+
+// Dirty reports whether the worktree at path has uncommitted changes
+// (modified, staged, or untracked).
+func Dirty(r CommandRunner, path string) (bool, error) {
+	out, err := r.Run("git", "-C", path, "status", "--porcelain")
+	if err != nil {
+		return false, fmt.Errorf("checking dirty state: %w", err)
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
+// HeadInfo returns the subject and committer date of HEAD for the worktree at
+// path. Date is parsed from strict ISO-8601 (%cI), which is RFC3339-compatible.
+func HeadInfo(r CommandRunner, path string) (subject string, date time.Time, err error) {
+	out, err := r.Run("git", "-C", path, "log", "-1", "--format=%cI%n%s")
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("reading head info: %w", err)
+	}
+	lines := strings.SplitN(strings.TrimRight(out, "\n"), "\n", 2)
+	if len(lines) < 2 {
+		return "", time.Time{}, fmt.Errorf("unexpected log output: %q", out)
+	}
+	date, err = time.Parse(time.RFC3339, lines[0])
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("parsing date %q: %w", lines[0], err)
+	}
+	return lines[1], date, nil
+}
+
+// Upstream returns the remote and branch of the configured upstream for the
+// worktree at path. Returns an error if no upstream is configured.
+func Upstream(r CommandRunner, path string) (remote, branch string, err error) {
+	out, err := r.Run("git", "-C", path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil {
+		return "", "", fmt.Errorf("resolving upstream: %w", err)
+	}
+	ref := strings.TrimSpace(out)
+	if ref == "" {
+		return "", "", fmt.Errorf("empty upstream ref")
+	}
+	idx := strings.Index(ref, "/")
+	if idx < 0 {
+		return "", ref, nil
+	}
+	return ref[:idx], ref[idx+1:], nil
+}
+
+// AheadBehind returns the number of commits HEAD is ahead and behind upstream
+// for the worktree at path. The upstream ref is used as-is (e.g. "origin/main").
+func AheadBehind(r CommandRunner, path, upstream string) (ahead, behind int, err error) {
+	out, err := r.Run("git", "-C", path, "rev-list", "--left-right", "--count", "HEAD..."+upstream)
+	if err != nil {
+		return 0, 0, fmt.Errorf("counting ahead/behind: %w", err)
+	}
+	parts := strings.Fields(strings.TrimSpace(out))
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected rev-list output: %q", out)
+	}
+	ahead, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parsing ahead count: %w", err)
+	}
+	behind, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parsing behind count: %w", err)
+	}
+	return ahead, behind, nil
 }
