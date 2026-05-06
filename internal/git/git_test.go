@@ -1,6 +1,7 @@
 package git_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -21,14 +22,10 @@ type fakeRunner struct {
 	lastArgs []string
 }
 
-func (f *fakeRunner) Run(name string, args ...string) (string, error) {
+func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	f.lastCmd = name
 	f.lastArgs = args
 	return f.out, f.err
-}
-
-func (f *fakeRunner) RunInteractive(_ string, _ ...string) error {
-	return f.err
 }
 
 func TestRepoRoot(t *testing.T) {
@@ -54,7 +51,7 @@ func TestRepoRoot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{out: tt.out, err: tt.err}
-			got, err := git.RepoRoot(r)
+			got, err := git.RepoRoot(t.Context(), r)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -95,7 +92,7 @@ func TestMainWorktree(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{out: tt.out, err: tt.err}
-			got, err := git.MainWorktree(r)
+			got, err := git.MainWorktree(t.Context(), r)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -135,7 +132,7 @@ func TestDefaultBranch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{out: tt.out, err: tt.err}
-			got := git.DefaultBranch(r)
+			got := git.DefaultBranch(t.Context(), r)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -144,13 +141,13 @@ func TestDefaultBranch(t *testing.T) {
 func TestFetch(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		r := &fakeRunner{}
-		err := git.Fetch(r, "origin")
+		err := git.Fetch(t.Context(), r, "origin")
 		require.NoError(t, err)
 	})
 
 	t.Run("error", func(t *testing.T) {
 		r := &fakeRunner{err: fmt.Errorf("network error")}
-		err := git.Fetch(r, "origin")
+		err := git.Fetch(t.Context(), r, "origin")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "fetching origin")
 	})
@@ -159,24 +156,24 @@ func TestFetch(t *testing.T) {
 func TestBranchExists(t *testing.T) {
 	t.Run("exists", func(t *testing.T) {
 		r := &fakeRunner{}
-		assert.True(t, git.BranchExists(r, "main"))
+		assert.True(t, git.BranchExists(t.Context(), r, "main"))
 	})
 
 	t.Run("does not exist", func(t *testing.T) {
 		r := &fakeRunner{err: fmt.Errorf("not found")}
-		assert.False(t, git.BranchExists(r, "nope"))
+		assert.False(t, git.BranchExists(t.Context(), r, "nope"))
 	})
 }
 
 func TestRemoteRefExists(t *testing.T) {
 	t.Run("exists", func(t *testing.T) {
 		r := &fakeRunner{}
-		assert.True(t, git.RemoteRefExists(r, "origin/main"))
+		assert.True(t, git.RemoteRefExists(t.Context(), r, "origin/main"))
 	})
 
 	t.Run("does not exist", func(t *testing.T) {
 		r := &fakeRunner{err: fmt.Errorf("not found")}
-		assert.False(t, git.RemoteRefExists(r, "origin/nope"))
+		assert.False(t, git.RemoteRefExists(t.Context(), r, "origin/nope"))
 	})
 }
 
@@ -195,7 +192,7 @@ func TestDirty(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{out: tt.out}
-			got, err := git.Dirty(r, "/some/path")
+			got, err := git.Dirty(t.Context(), r, "/some/path")
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, []string{"-C", "/some/path", "status", "--porcelain"}, r.lastArgs)
@@ -204,7 +201,7 @@ func TestDirty(t *testing.T) {
 
 	t.Run("propagates error", func(t *testing.T) {
 		r := &fakeRunner{err: fmt.Errorf("not a repo")}
-		_, err := git.Dirty(r, "/x")
+		_, err := git.Dirty(t.Context(), r, "/x")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "checking dirty state")
 	})
@@ -213,7 +210,7 @@ func TestDirty(t *testing.T) {
 func TestHeadInfo(t *testing.T) {
 	t.Run("parses date and subject", func(t *testing.T) {
 		r := &fakeRunner{out: "2026-05-04T10:23:00+02:00\nfix: handle empty input\n"}
-		subject, date, err := git.HeadInfo(r, "/wt/foo")
+		subject, date, err := git.HeadInfo(t.Context(), r, "/wt/foo")
 		require.NoError(t, err)
 		assert.Equal(t, "fix: handle empty input", subject)
 		want, _ := time.Parse(time.RFC3339, "2026-05-04T10:23:00+02:00")
@@ -223,27 +220,27 @@ func TestHeadInfo(t *testing.T) {
 
 	t.Run("subject with newlines is split on first only", func(t *testing.T) {
 		r := &fakeRunner{out: "2026-05-04T10:23:00Z\nline one\nline two\n"}
-		subject, _, err := git.HeadInfo(r, "/wt/foo")
+		subject, _, err := git.HeadInfo(t.Context(), r, "/wt/foo")
 		require.NoError(t, err)
 		assert.Equal(t, "line one\nline two", subject)
 	})
 
 	t.Run("empty output errors", func(t *testing.T) {
 		r := &fakeRunner{}
-		_, _, err := git.HeadInfo(r, "/wt/foo")
+		_, _, err := git.HeadInfo(t.Context(), r, "/wt/foo")
 		require.Error(t, err)
 	})
 
 	t.Run("invalid date errors", func(t *testing.T) {
 		r := &fakeRunner{out: "not-a-date\nsubject\n"}
-		_, _, err := git.HeadInfo(r, "/wt/foo")
+		_, _, err := git.HeadInfo(t.Context(), r, "/wt/foo")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parsing date")
 	})
 
 	t.Run("propagates git error", func(t *testing.T) {
 		r := &fakeRunner{err: fmt.Errorf("does not have any commits yet")}
-		_, _, err := git.HeadInfo(r, "/wt/foo")
+		_, _, err := git.HeadInfo(t.Context(), r, "/wt/foo")
 		require.Error(t, err)
 	})
 }
@@ -266,7 +263,7 @@ func TestUpstream(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{out: tt.out, err: tt.err}
-			remote, branch, err := git.Upstream(r, "/wt/foo")
+			remote, branch, err := git.Upstream(t.Context(), r, "/wt/foo")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -299,7 +296,7 @@ func TestAheadBehind(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{out: tt.out, err: tt.err}
-			ahead, behind, err := git.AheadBehind(r, "/wt/foo", "origin/foo")
+			ahead, behind, err := git.AheadBehind(t.Context(), r, "/wt/foo", "origin/foo")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -344,7 +341,7 @@ func TestCommitsBehind(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{out: tt.out, err: tt.err}
-			got := git.CommitsBehind(r, "feature", "origin/feature")
+			got := git.CommitsBehind(t.Context(), r, "feature", "origin/feature")
 			assert.Equal(t, tt.want, got)
 		})
 	}

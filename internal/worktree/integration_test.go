@@ -27,14 +27,14 @@ func initTestRepo(t *testing.T) (repoPath string, runner *exec.DefaultRunner) {
 		{"git", "config", "user.email", "test@test.com"},
 		{"git", "config", "user.name", "Test"},
 	} {
-		_, err := runner.Run(cmd[0], cmd[1:]...)
+		_, err := runner.Run(t.Context(), cmd[0], cmd[1:]...)
 		require.NoError(t, err)
 	}
 
 	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("# test"), 0o600))
-	_, err := runner.Run("git", "add", ".")
+	_, err := runner.Run(t.Context(), "git", "add", ".")
 	require.NoError(t, err)
-	_, err = runner.Run("git", "commit", "-m", "init")
+	_, err = runner.Run(t.Context(), "git", "commit", "-m", "init")
 	require.NoError(t, err)
 
 	return repoPath, runner
@@ -49,7 +49,7 @@ func TestIntegration_CreateListDelete(t *testing.T) {
 		DefaultBranch: "main",
 	}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "test-branch",
 		SkipSetup: true,
 	})
@@ -57,15 +57,15 @@ func TestIntegration_CreateListDelete(t *testing.T) {
 	assert.Equal(t, "test-branch", wt.Branch)
 	assert.DirExists(t, wt.Path)
 
-	wts, err := worktree.List(r)
+	wts, err := worktree.List(t.Context(), r)
 	require.NoError(t, err)
 	assert.Len(t, wts, 2)
 
-	err = worktree.Delete(r, worktree.DeleteOpts{Path: wt.Path})
+	err = worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wt.Path})
 	require.NoError(t, err)
 	assert.NoDirExists(t, wt.Path)
 
-	wts, err = worktree.List(r)
+	wts, err = worktree.List(t.Context(), r)
 	require.NoError(t, err)
 	assert.Len(t, wts, 1)
 }
@@ -82,7 +82,7 @@ func TestIntegration_CreateWithSymlinks(t *testing.T) {
 		Symlinks:      []string{".env"},
 	}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "symlink-test",
 		SkipSetup: true,
 	})
@@ -95,7 +95,7 @@ func TestIntegration_CreateWithSymlinks(t *testing.T) {
 	actual, _ := filepath.EvalSymlinks(target)
 	assert.Equal(t, expected, actual)
 
-	require.NoError(t, worktree.Delete(r, worktree.DeleteOpts{Path: wt.Path}))
+	require.NoError(t, worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wt.Path}))
 }
 
 func TestIntegration_CreateExistingBranch(t *testing.T) {
@@ -108,10 +108,10 @@ func TestIntegration_CreateExistingBranch(t *testing.T) {
 	}
 
 	// Create a branch without a worktree
-	_, err := r.Run("git", "branch", "existing-branch")
+	_, err := r.Run(t.Context(), "git", "branch", "existing-branch")
 	require.NoError(t, err)
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "existing-branch",
 		SkipSetup: true,
 	})
@@ -119,5 +119,5 @@ func TestIntegration_CreateExistingBranch(t *testing.T) {
 	assert.Equal(t, "existing-branch", wt.Branch)
 	assert.DirExists(t, wt.Path)
 
-	require.NoError(t, worktree.Delete(r, worktree.DeleteOpts{Path: wt.Path}))
+	require.NoError(t, worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wt.Path}))
 }

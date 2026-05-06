@@ -2,12 +2,18 @@ package cli
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/davidmks/sarj/internal/config"
 	"github.com/davidmks/sarj/internal/exec"
+	"github.com/davidmks/sarj/internal/git"
+	"github.com/davidmks/sarj/internal/status"
 	"github.com/davidmks/sarj/internal/tmux"
 	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/spf13/cobra"
@@ -15,20 +21,22 @@ import (
 
 func newDeleteCmd(r exec.Runner) *cobra.Command {
 	var deleteBranch, keepBranch, yes bool
+	var state []string
 
 	cmd := &cobra.Command{
 		Use:   "delete [name...]",
 		Short: "Remove one or more worktrees and optionally their branches",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			in := bufio.NewReader(cmd.InOrStdin())
 
-			wts, err := worktree.List(r)
+			wts, err := worktree.List(ctx, r)
 			if err != nil {
 				return fmt.Errorf("listing worktrees: %w", err)
 			}
 
-			targets, err := resolveTargets(wts, args)
+			targets, err := resolveDeleteTargets(ctx, r, wts, args, state)
 			if err != nil {
 				return err
 			}
@@ -52,12 +60,12 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 				return fmt.Errorf("changing to main worktree: %w", err)
 			}
 
-			targets = deferCurrentSession(r, targets)
+			targets = deferCurrentSession(ctx, r, targets)
 
 			opts := deleteOpts{deleteBranch: deleteBranch, keepBranch: keepBranch, yes: yes}
 			var failed []string
 			for _, t := range targets {
-				if err := deleteOne(cmd, r, t, opts, in); err != nil {
+				if err := deleteOne(ctx, cmd, r, t, opts, in); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: %s: %v\n", t.name, err) //nolint:errcheck
 					failed = append(failed, t.name)
 				}
@@ -74,6 +82,7 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 	cmd.Flags().BoolVarP(&deleteBranch, "delete-branch", "D", false, "also delete the branch")
 	cmd.Flags().BoolVar(&keepBranch, "keep-branch", false, "keep the branch (no prompt)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "skip prompts (defaults to keep-branch)")
+	cmd.Flags().StringSliceVar(&state, "state", nil, "filter by status hook output; repeat or comma-separate (e.g. --state=merged,closed)")
 	cmd.MarkFlagsMutuallyExclusive("delete-branch", "keep-branch")
 
 	cmd.ValidArgsFunction = completeWorktreeNames(r)
@@ -93,6 +102,125 @@ type deleteOpts struct {
 	yes          bool
 }
 
+// resolveDeleteTargets resolves the candidate worktrees and applies the
+// --state filter when set. Without --state it falls through to the existing
+// arg-or-cwd behavior. With --state and no args, the candidate pool is all
+// non-main worktrees rather than the cwd.
+func resolveDeleteTargets(ctx context.Context, r exec.Runner, wts []worktree.Worktree, args, state []string) ([]deleteTarget, error) {
+	wanted := stateSet(state)
+	if len(wanted) == 0 {
+		return resolveTargets(wts, args)
+	}
+
+	cfg, err := loadDeleteConfig(ctx, r)
+	if errors.Is(err, errNotARepo) || (err == nil && cfg.Status.Command == "") {
+		return nil, fmt.Errorf("--state requires [status] command in config")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	pool, err := candidatePool(wts, args)
+	if err != nil {
+		return nil, err
+	}
+	if len(pool) == 0 {
+		return nil, nil
+	}
+
+	timeout, err := parseStatusTimeout(cfg.Status.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]status.Item, len(pool))
+	for i, t := range pool {
+		items[i] = status.Item{Branch: t.wt.Branch, Path: t.wt.Path}
+	}
+	results := status.ProbeAll(ctx, r, cfg.Status.Command, items, timeout)
+
+	var filtered []deleteTarget
+	for i, t := range pool {
+		if wanted[strings.ToLower(results[i].State)] {
+			filtered = append(filtered, t)
+		}
+	}
+	if len(filtered) == 0 {
+		warnNoStateMatch(state, results)
+	}
+	return filtered, nil
+}
+
+// warnNoStateMatch prints, on stderr, the set of states actually observed
+// when the user's --state filter matched nothing. Helps diagnose typos,
+// case mismatches, or wrong expectations of the hook output.
+func warnNoStateMatch(wanted []string, results []status.Result) {
+	seen := map[string]bool{}
+	for _, res := range results {
+		if res.State != "" {
+			seen[res.State] = true
+		}
+	}
+	if len(seen) == 0 {
+		return
+	}
+	observed := make([]string, 0, len(seen))
+	for s := range seen {
+		observed = append(observed, s)
+	}
+	sort.Strings(observed)
+	fmt.Fprintf(os.Stderr, "warning: --state %s matched no worktrees (observed: %s)\n", //nolint:errcheck
+		strings.Join(wanted, ","), strings.Join(observed, ", "))
+}
+
+// candidatePool returns the worktrees the --state filter applies to: the
+// named ones (with strict unknown-name failure) when args are given, or all
+// non-main worktrees when args are empty.
+func candidatePool(wts []worktree.Worktree, args []string) ([]deleteTarget, error) {
+	if len(args) > 0 {
+		return resolveNamed(wts, args)
+	}
+	mainPath := worktree.MainPath(wts)
+	var pool []deleteTarget
+	for i := range wts {
+		wt := &wts[i]
+		if wt.Path == mainPath {
+			continue
+		}
+		pool = append(pool, deleteTarget{wt: wt, name: filepath.Base(wt.Path)})
+	}
+	return pool, nil
+}
+
+// stateSet folds the --state values into a lowercased lookup set, trimming
+// whitespace and dropping empties. Lowercasing on both sides of the compare
+// makes matching forge-agnostic — `gh` returns OPEN/MERGED/CLOSED while
+// other tools return lower-case, and users tend to type lower-case.
+func stateSet(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, v := range values {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v != "" {
+			out[v] = true
+		}
+	}
+	return out
+}
+
+// errNotARepo signals that we're not running inside a git repository.
+// Callers that need a config should treat this as "no config available"
+// rather than a hard failure.
+var errNotARepo = errors.New("not in a git repository")
+
+// loadDeleteConfig loads the merged config from the main worktree's path.
+// Returns errNotARepo when git can't find a worktree.
+func loadDeleteConfig(ctx context.Context, r exec.Runner) (*config.Config, error) {
+	mainPath, err := git.MainWorktree(ctx, r)
+	if err != nil || mainPath == "" {
+		return nil, errNotARepo
+	}
+	return config.Load(mainPath, filepath.Base(mainPath))
+}
+
 // resolveTargets resolves all delete targets up front so unknown names fail
 // before any side effect. Zero args falls back to cwd inference.
 func resolveTargets(wts []worktree.Worktree, args []string) ([]deleteTarget, error) {
@@ -103,7 +231,10 @@ func resolveTargets(wts []worktree.Worktree, args []string) ([]deleteTarget, err
 		}
 		return []deleteTarget{t}, nil
 	}
+	return resolveNamed(wts, args)
+}
 
+func resolveNamed(wts []worktree.Worktree, args []string) ([]deleteTarget, error) {
 	targets := make([]deleteTarget, 0, len(args))
 	var unknown []string
 	for _, name := range args {
@@ -141,11 +272,11 @@ func resolveFromCwd(wts []worktree.Worktree) (deleteTarget, error) {
 
 // deferCurrentSession moves any target matching the current tmux session to the
 // end of the queue so prior deletes complete before the SIGHUP-on-current-kill.
-func deferCurrentSession(r exec.Runner, targets []deleteTarget) []deleteTarget {
+func deferCurrentSession(ctx context.Context, r exec.Runner, targets []deleteTarget) []deleteTarget {
 	if !tmux.IsInsideSession() {
 		return targets
 	}
-	current := tmux.CurrentSessionName(r)
+	current := tmux.CurrentSessionName(ctx, r)
 	head := make([]deleteTarget, 0, len(targets))
 	var tail []deleteTarget
 	for _, t := range targets {
@@ -158,9 +289,9 @@ func deferCurrentSession(r exec.Runner, targets []deleteTarget) []deleteTarget {
 	return append(head, tail...)
 }
 
-func deleteOne(cmd *cobra.Command, r exec.Runner, t deleteTarget, opts deleteOpts, in *bufio.Reader) error {
+func deleteOne(ctx context.Context, cmd *cobra.Command, r exec.Runner, t deleteTarget, opts deleteOpts, in *bufio.Reader) error {
 	fmt.Fprintf(os.Stderr, "Removing worktree %s...\n", t.name) //nolint:errcheck
-	if err := worktree.Delete(r, worktree.DeleteOpts{
+	if err := worktree.Delete(ctx, r, worktree.DeleteOpts{
 		Path:     t.wt.Path,
 		Progress: os.Stderr,
 	}); err != nil {
@@ -174,7 +305,7 @@ func deleteOne(cmd *cobra.Command, r exec.Runner, t deleteTarget, opts deleteOpt
 
 	branchStatus := "branch kept"
 	if deleteBranch {
-		if _, err := r.Run("git", "branch", "-D", t.wt.Branch); err != nil {
+		if _, err := r.Run(ctx, "git", "branch", "-D", t.wt.Branch); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not delete branch: %v\n", err) //nolint:errcheck
 		} else {
 			branchStatus = "branch deleted"
@@ -187,10 +318,10 @@ func deleteOne(cmd *cobra.Command, r exec.Runner, t deleteTarget, opts deleteOpt
 	// from inside the target session. With multi-arg, the current-session
 	// target was deferred to the end so prior deletes already finished.
 	sessionName := tmux.SanitizeName(t.name)
-	if tmux.IsInsideSession() && tmux.CurrentSessionName(r) == sessionName {
-		_ = tmux.SwitchToLastSession(r)
+	if tmux.IsInsideSession() && tmux.CurrentSessionName(ctx, r) == sessionName {
+		_ = tmux.SwitchToLastSession(ctx, r)
 	}
-	if err := tmux.KillSession(r, t.name); err != nil {
+	if err := tmux.KillSession(ctx, r, t.name); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not kill tmux session: %v\n", err) //nolint:errcheck
 	}
 	return nil
