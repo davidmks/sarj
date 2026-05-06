@@ -244,17 +244,22 @@ Setup runs alongside your work instead of blocking. `--no-setup` only skips the 
 
 #### Status hook
 
-A shell command run per worktree. Trimmed stdout is the state. Non-zero exit, empty output, or timeout (~10s) all map to `unknown`. Forge-agnostic — no `gh` dep, no caching.
+A shell command run per worktree. Trimmed stdout is the state. Non-zero exit, empty output, or timeout (default 10s, configurable) all map to `unknown`. Forge-agnostic — no `gh` dep, no caching.
 
 ```toml
 [status]
-command = "gh pr view {{.Branch}} --json state -q .state 2>/dev/null"
+command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
+timeout = "10s"     # optional; accepts any time.ParseDuration value
 ```
 
-| Placeholder | Replaced with |
-|-------------|---------------|
-| `{{.Branch}}` | Worktree branch name |
-| `{{.Path}}` | Worktree absolute path |
+`gh pr list --state all` is preferred over `gh pr view` so CLOSED-not-merged PRs are detected too. `--state` matches case-insensitively, so a hook returning `MERGED` matches `--state merged`.
+
+The branch name and worktree path are exposed as environment variables so values aren't interpolated into the shell command (no quoting, no injection):
+
+| Variable | Value |
+|----------|-------|
+| `$BRANCH` | Worktree branch name |
+| `$SARJ_WT_PATH` | Worktree absolute path |
 
 When configured, `sarj list` adds a `STATUS` column and populates the JSON `status` field, and `sarj delete --state merged` filters by the token. When unset, the column is omitted, JSON `status` is `null`, and `--state` errors. Compose with `jq` for ad-hoc filters:
 
@@ -291,7 +296,7 @@ Remove one or more worktrees and kill their tmux sessions. With no name, deletes
 | `-D, --delete-branch` | Delete the branch (no prompt) |
 | `--keep-branch` | Keep the branch (no prompt) |
 | `-y, --yes` | Skip prompts (defaults to keep-branch) |
-| `--state <list>` | Filter by status hook output (comma-separated, e.g. `merged,closed`) |
+| `--state <list>` | Filter by status hook output; repeat or comma-separate (e.g. `--state=merged,closed`) |
 
 ### `sarj list [-o text|json]`
 
