@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +10,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/davidmks/sarj/internal/config"
 	"github.com/davidmks/sarj/internal/exec"
 	"github.com/davidmks/sarj/internal/git"
+	"github.com/davidmks/sarj/internal/status"
 	"github.com/davidmks/sarj/internal/tmux"
 	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/spf13/cobra"
@@ -56,55 +59,7 @@ func newListCmd(r exec.Runner) *cobra.Command {
 			if output != "text" && output != "json" {
 				return fmt.Errorf("invalid -o value %q (want text or json)", output)
 			}
-
-			wts, err := worktree.List(r)
-			if err != nil {
-				return err
-			}
-			mainWT, _ := git.MainWorktree(r)
-
-			entries := make([]listEntry, 0, len(wts))
-			for _, wt := range wts {
-				if wt.Path == mainWT {
-					continue
-				}
-				entries = append(entries, listEntry{
-					Name:   filepath.Base(wt.Path),
-					Path:   wt.Path,
-					Branch: wt.Branch,
-					Head:   headInfo{SHA: wt.HEAD},
-				})
-			}
-
-			warnings := make([][]string, len(entries))
-			var wg sync.WaitGroup
-			for i := range entries {
-				wg.Add(1)
-				go func(i int) {
-					defer wg.Done()
-					warnings[i] = enrichOne(r, &entries[i])
-				}(i)
-			}
-			wg.Wait()
-
-			stderr := cmd.ErrOrStderr()
-			for _, ws := range warnings {
-				for _, w := range ws {
-					fmt.Fprintln(stderr, w) //nolint:errcheck
-				}
-			}
-
-			if sessionSet := loadTmuxSessions(r); sessionSet != nil {
-				for i := range entries {
-					sn := tmux.SanitizeName(entries[i].Name)
-					entries[i].Tmux = &tmuxInfo{Session: sn, Active: sessionSet[sn]}
-				}
-			}
-
-			if output == "json" {
-				return printJSON(cmd.OutOrStdout(), entries)
-			}
-			return printText(cmd.OutOrStdout(), entries)
+			return runList(cmd, r, output)
 		},
 	}
 
@@ -113,34 +68,153 @@ func newListCmd(r exec.Runner) *cobra.Command {
 	return cmd
 }
 
+func runList(cmd *cobra.Command, r exec.Runner, output string) error {
+	ctx := cmd.Context()
+	wts, err := worktree.List(ctx, r)
+	if err != nil {
+		return err
+	}
+	mainPath, _ := git.MainWorktree(ctx, r)
+
+	cfg, err := loadListConfig(mainPath)
+	if err != nil {
+		return err
+	}
+
+	entries := buildEntries(wts, mainPath)
+	enrichEntries(ctx, r, cmd.ErrOrStderr(), entries)
+	annotateTmux(ctx, r, entries)
+
+	showStatus := cfg != nil && cfg.Status.Command != ""
+	if showStatus {
+		if err := probeStatus(ctx, r, &cfg.Status, entries); err != nil {
+			return err
+		}
+	}
+
+	if output == "json" {
+		return printJSON(cmd.OutOrStdout(), entries)
+	}
+	return printText(cmd.OutOrStdout(), entries, showStatus)
+}
+
+// buildEntries returns one listEntry per non-main worktree, base-populated only.
+func buildEntries(wts []worktree.Worktree, mainPath string) []listEntry {
+	entries := make([]listEntry, 0, len(wts))
+	for _, wt := range wts {
+		if wt.Path == mainPath {
+			continue
+		}
+		entries = append(entries, listEntry{
+			Name:   filepath.Base(wt.Path),
+			Path:   wt.Path,
+			Branch: wt.Branch,
+			Head:   headInfo{SHA: wt.HEAD},
+		})
+	}
+	return entries
+}
+
+// enrichEntries fills dirty/head/upstream for each entry concurrently and
+// drains per-entry warnings to stderr after all probes return.
+func enrichEntries(ctx context.Context, r exec.Runner, stderr io.Writer, entries []listEntry) {
+	warnings := make([][]string, len(entries))
+	var wg sync.WaitGroup
+	for i := range entries {
+		wg.Go(func() {
+			warnings[i] = enrichOne(ctx, r, &entries[i])
+		})
+	}
+	wg.Wait()
+
+	for _, ws := range warnings {
+		for _, w := range ws {
+			fmt.Fprintln(stderr, w) //nolint:errcheck
+		}
+	}
+}
+
+// annotateTmux marks each entry with its tmux session state when tmux is reachable.
+func annotateTmux(ctx context.Context, r exec.Runner, entries []listEntry) {
+	sessionSet := loadTmuxSessions(ctx, r)
+	if sessionSet == nil {
+		return
+	}
+	for i := range entries {
+		sn := tmux.SanitizeName(entries[i].Name)
+		entries[i].Tmux = &tmuxInfo{Session: sn, Active: sessionSet[sn]}
+	}
+}
+
+// loadListConfig loads the merged config when we're inside a repo. List used
+// to work without config; it still does — config is only needed for the
+// optional status hook, so a missing repo root resolves to a nil config.
+func loadListConfig(repoRoot string) (*config.Config, error) {
+	if repoRoot == "" {
+		return nil, nil
+	}
+	return config.Load(repoRoot, filepath.Base(repoRoot))
+}
+
+// probeStatus runs the configured status hook for each entry in parallel and
+// fills in the Status field. Failures map to status.Unknown internally.
+func probeStatus(ctx context.Context, r exec.Runner, cfg *config.StatusConfig, entries []listEntry) error {
+	timeout, err := parseStatusTimeout(cfg.Timeout)
+	if err != nil {
+		return err
+	}
+	items := make([]status.Item, len(entries))
+	for i, e := range entries {
+		items[i] = status.Item{Branch: e.Branch, Path: e.Path}
+	}
+	results := status.ProbeAll(ctx, r, cfg.Command, items, timeout)
+	for i := range entries {
+		entries[i].Status = &results[i].State
+	}
+	return nil
+}
+
+// parseStatusTimeout parses [status] timeout into a time.Duration.
+// Empty defers to status.DefaultTimeout via ProbeAll's zero-value handling.
+func parseStatusTimeout(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid [status] timeout %q: %w", raw, err)
+	}
+	return d, nil
+}
+
 // enrichOne fills in dirty, head subject/date, upstream, and ahead/behind for
 // an already-base-populated entry. Per-call git failures are returned as
 // warnings (caller drains them after wg.Wait); failed fields stay at zero.
-func enrichOne(r exec.Runner, e *listEntry) []string {
+func enrichOne(ctx context.Context, r exec.Runner, e *listEntry) []string {
 	var warnings []string
 	warn := func(err error) {
 		warnings = append(warnings, fmt.Sprintf("warning: %s: %v", e.Name, err))
 	}
 
-	if dirty, err := git.Dirty(r, e.Path); err != nil {
+	if dirty, err := git.Dirty(ctx, r, e.Path); err != nil {
 		warn(err)
 	} else {
 		e.Dirty = dirty
 	}
 
-	if subject, date, err := git.HeadInfo(r, e.Path); err != nil {
+	if subject, date, err := git.HeadInfo(ctx, r, e.Path); err != nil {
 		warn(err)
 	} else {
 		e.Head.Subject = subject
 		e.Head.Date = &date
 	}
 
-	remote, branch, err := git.Upstream(r, e.Path)
+	remote, branch, err := git.Upstream(ctx, r, e.Path)
 	if err != nil {
 		return warnings
 	}
 	up := &upstreamInfo{Remote: remote, Branch: branch}
-	if ahead, behind, err := git.AheadBehind(r, e.Path, remote+"/"+branch); err != nil {
+	if ahead, behind, err := git.AheadBehind(ctx, r, e.Path, remote+"/"+branch); err != nil {
 		warn(err)
 	} else {
 		up.Ahead = ahead
@@ -152,8 +226,8 @@ func enrichOne(r exec.Runner, e *listEntry) []string {
 
 // loadTmuxSessions returns a set of active tmux session names, or nil if tmux
 // is unavailable on the system.
-func loadTmuxSessions(r exec.Runner) map[string]bool {
-	sessions, err := tmux.ListSessions(r)
+func loadTmuxSessions(ctx context.Context, r exec.Runner) map[string]bool {
+	sessions, err := tmux.ListSessions(ctx, r)
 	if err != nil {
 		return nil
 	}
@@ -164,17 +238,25 @@ func loadTmuxSessions(r exec.Runner) map[string]bool {
 	return set
 }
 
-func printText(w io.Writer, entries []listEntry) error {
+func printText(w io.Writer, entries []listEntry, showStatus bool) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tBRANCH\tAHEAD/BEHIND\tAGE\tDIRTY\tTMUX") //nolint:errcheck
+	header := "NAME\tBRANCH\tAHEAD/BEHIND\tAGE\tDIRTY\tTMUX"
+	if showStatus {
+		header += "\tSTATUS"
+	}
+	fmt.Fprintln(tw, header) //nolint:errcheck
 	for _, e := range entries {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", //nolint:errcheck
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s", //nolint:errcheck
 			e.Name, e.Branch,
 			formatAheadBehind(e.Upstream),
 			formatAge(e.Head.Date),
 			formatDirty(e.Dirty),
 			formatTmux(e.Tmux),
 		)
+		if showStatus {
+			fmt.Fprintf(tw, "\t%s", formatStatus(e.Status)) //nolint:errcheck
+		}
+		fmt.Fprintln(tw) //nolint:errcheck
 	}
 	return tw.Flush()
 }
@@ -227,4 +309,11 @@ func formatTmux(t *tmuxInfo) string {
 		return "active"
 	}
 	return "-"
+}
+
+func formatStatus(s *string) string {
+	if s == nil || *s == "" {
+		return "-"
+	}
+	return *s
 }

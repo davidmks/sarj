@@ -2,6 +2,7 @@ package worktree_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +26,7 @@ type response struct {
 	err error
 }
 
-func (f *fakeRunner) Run(name string, args ...string) (string, error) {
+func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	call := name + " " + strings.Join(args, " ")
 	f.calls = append(f.calls, call)
 
@@ -39,7 +40,11 @@ func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 	return "", nil
 }
 
-func (f *fakeRunner) RunInteractive(_ string, _ ...string) error {
+func (f *fakeRunner) RunWithEnv(ctx context.Context, _ []string, name string, args ...string) (string, error) {
+	return f.Run(ctx, name, args...)
+}
+
+func (f *fakeRunner) RunInteractive(_ context.Context, _ string, _ ...string) error {
 	return f.interactiveErr
 }
 
@@ -62,7 +67,7 @@ func TestCreate_NewBranch(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "my-feature",
 		SkipSetup: true,
 	})
@@ -83,7 +88,7 @@ func TestCreate_ExistingBranch(t *testing.T) {
 		"git rev-list": {out: "0"},
 	}}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "existing-branch",
 		SkipSetup: true,
 	})
@@ -105,7 +110,7 @@ func TestCreate_GeneratesName(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{SkipSetup: true})
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{SkipSetup: true})
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, wt.Branch)
@@ -117,7 +122,7 @@ func TestCreate_ExistingDir(t *testing.T) {
 	cfg := &config.Config{WorktreeBase: wtBase}
 	r := &fakeRunner{}
 
-	_, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	_, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "existing",
 		SkipSetup: true,
 	})
@@ -135,7 +140,7 @@ func TestCreate_FetchFailsContinues(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "offline",
 		SkipSetup: true,
 	})
@@ -162,7 +167,7 @@ func TestCreate_RollbackOnSetupFailure(t *testing.T) {
 		interactiveErr: fmt.Errorf("setup failed"),
 	}
 
-	_, err := worktree.Create(r, cfg, worktree.CreateOpts{Name: "doomed"})
+	_, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{Name: "doomed"})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "setup command failed")
@@ -187,7 +192,7 @@ func TestCreate_RollbackKeepsBranchWhenPreexisting(t *testing.T) {
 		interactiveErr: fmt.Errorf("setup failed"),
 	}
 
-	_, err := worktree.Create(r, cfg, worktree.CreateOpts{Name: "preexisting"})
+	_, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{Name: "preexisting"})
 
 	require.Error(t, err)
 	assert.True(t, r.hasCall("worktree remove --force"))
@@ -203,7 +208,7 @@ func TestCreate_NewBranch_FallsBackToLocal(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "my-feature",
 		SkipSetup: true,
 	})
@@ -222,7 +227,7 @@ func TestCreate_NewBranch_BaseAlreadyRemoteRef(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "my-feature",
 		Base:      "origin/develop",
 		SkipSetup: true,
@@ -244,7 +249,7 @@ func TestCreate_ExistingBranch_BehindWarning(t *testing.T) {
 		"git rev-list": {out: "3"},
 	}}
 
-	_, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	_, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "stale-branch",
 		SkipSetup: true,
 		Progress:  &buf,
@@ -265,7 +270,7 @@ func TestCreate_ExistingBranch_NotBehind(t *testing.T) {
 		"git rev-list": {out: "0"},
 	}}
 
-	_, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	_, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "up-to-date",
 		SkipSetup: true,
 		Progress:  &buf,
@@ -286,7 +291,7 @@ func TestCreate_ExistingBranch_NoRemoteCounterpart(t *testing.T) {
 		"git rev-list": {err: fmt.Errorf("unknown revision")},
 	}}
 
-	_, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	_, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "local-only",
 		SkipSetup: true,
 		Progress:  &buf,
@@ -305,7 +310,7 @@ func TestCreate_FetchFailsFallsBackToLocal(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	wt, err := worktree.Create(r, cfg, worktree.CreateOpts{
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
 		Name:      "offline-new",
 		SkipSetup: true,
 	})
@@ -323,7 +328,7 @@ func TestDelete(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	err := worktree.Delete(r, worktree.DeleteOpts{Path: wtPath})
+	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath})
 
 	require.NoError(t, err)
 	assert.True(t, r.hasCall("worktree remove"))
@@ -338,7 +343,7 @@ func TestDelete_RemoveFails(t *testing.T) {
 		"git worktree remove": {err: fmt.Errorf("locked")},
 	}}
 
-	err := worktree.Delete(r, worktree.DeleteOpts{Path: wtPath})
+	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "removing worktree")
@@ -351,7 +356,7 @@ func TestDelete_StaleEntry(t *testing.T) {
 		"git worktree": {},
 	}}
 
-	err := worktree.Delete(r, worktree.DeleteOpts{Path: wtPath})
+	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath})
 
 	require.NoError(t, err)
 	assert.False(t, r.hasCall("worktree remove"), "should skip remove for missing directory")
@@ -363,7 +368,7 @@ func TestList_Error(t *testing.T) {
 		"git worktree list --porcelain": {err: fmt.Errorf("not a git repo")},
 	}}
 
-	_, err := worktree.List(r)
+	_, err := worktree.List(t.Context(), r)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "listing worktrees")
@@ -375,7 +380,7 @@ func TestList(t *testing.T) {
 		"git worktree": {out: porcelain},
 	}}
 
-	wts, err := worktree.List(r)
+	wts, err := worktree.List(t.Context(), r)
 
 	require.NoError(t, err)
 	assert.Len(t, wts, 2)

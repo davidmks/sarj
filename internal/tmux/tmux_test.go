@@ -1,6 +1,7 @@
 package tmux_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -23,7 +24,7 @@ type response struct {
 	err error
 }
 
-func (f *fakeRunner) Run(name string, args ...string) (string, error) {
+func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	call := name + " " + strings.Join(args, " ")
 	f.calls = append(f.calls, call)
 
@@ -37,7 +38,11 @@ func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 	return "", nil
 }
 
-func (f *fakeRunner) RunInteractive(name string, args ...string) error {
+func (f *fakeRunner) RunWithEnv(ctx context.Context, _ []string, name string, args ...string) (string, error) {
+	return f.Run(ctx, name, args...)
+}
+
+func (f *fakeRunner) RunInteractive(_ context.Context, name string, args ...string) error {
 	call := name + " " + strings.Join(args, " ")
 	f.calls = append(f.calls, call)
 
@@ -81,14 +86,14 @@ func TestIsInstalled(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux -V": {out: "tmux 3.4"},
 		}}
-		assert.True(t, tmux.IsInstalled(r))
+		assert.True(t, tmux.IsInstalled(t.Context(), r))
 	})
 
 	t.Run("not installed", func(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux -V": {err: fmt.Errorf("not found")},
 		}}
-		assert.False(t, tmux.IsInstalled(r))
+		assert.False(t, tmux.IsInstalled(t.Context(), r))
 	})
 }
 
@@ -109,21 +114,21 @@ func TestSessionExists(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux has-session -t my-session": {},
 		}}
-		assert.True(t, tmux.SessionExists(r, "my-session"))
+		assert.True(t, tmux.SessionExists(t.Context(), r, "my-session"))
 	})
 
 	t.Run("not exists", func(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux has-session -t my-session": {err: fmt.Errorf("no session")},
 		}}
-		assert.False(t, tmux.SessionExists(r, "my-session"))
+		assert.False(t, tmux.SessionExists(t.Context(), r, "my-session"))
 	})
 
 	t.Run("sanitizes name", func(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux has-session -t feat-v2": {},
 		}}
-		assert.True(t, tmux.SessionExists(r, "feat.v2"))
+		assert.True(t, tmux.SessionExists(t.Context(), r, "feat.v2"))
 	})
 }
 
@@ -134,7 +139,7 @@ func TestCreateSession_SingleWindow(t *testing.T) {
 		{Name: "terminal"},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "my-session", "/work/repo", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("new-session -d -s my-session -c /work/repo -n terminal"))
@@ -150,7 +155,7 @@ func TestCreateSession_MultipleWindows(t *testing.T) {
 		{Name: "claude", Command: "claude"},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "my-session", "/work/repo", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("new-session -d -s my-session"))
@@ -173,7 +178,7 @@ func TestCreateSession_WithPanes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work/repo", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "my-session", "/work/repo", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t my-session:dev clear && nvim . Enter"))
@@ -184,7 +189,7 @@ func TestCreateSession_WithPanes(t *testing.T) {
 func TestCreateSession_SanitizesName(t *testing.T) {
 	r := &fakeRunner{responses: map[string]response{}}
 
-	err := tmux.CreateSession(r, "feat.v2", "/work", []config.WindowConfig{{Name: "terminal"}}, "", "")
+	err := tmux.CreateSession(t.Context(), r, "feat.v2", "/work", []config.WindowConfig{{Name: "terminal"}}, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("-s feat-v2"))
@@ -193,7 +198,7 @@ func TestCreateSession_SanitizesName(t *testing.T) {
 func TestCreateSession_DefaultWindow(t *testing.T) {
 	r := &fakeRunner{responses: map[string]response{}}
 
-	err := tmux.CreateSession(r, "test", "/work", nil, "", "")
+	err := tmux.CreateSession(t.Context(), r, "test", "/work", nil, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("-n terminal"))
@@ -204,7 +209,7 @@ func TestCreateSession_NewSessionFails(t *testing.T) {
 		"tmux new-session": {err: fmt.Errorf("duplicate session")},
 	}}
 
-	err := tmux.CreateSession(r, "my-session", "/work", []config.WindowConfig{{Name: "terminal"}}, "", "")
+	err := tmux.CreateSession(t.Context(), r, "my-session", "/work", []config.WindowConfig{{Name: "terminal"}}, "", "")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating tmux session")
@@ -220,7 +225,7 @@ func TestCreateSession_NewWindowFails(t *testing.T) {
 		{Name: "editor", Command: "nvim ."},
 	}
 
-	err := tmux.CreateSession(r, "my-session", "/work", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "my-session", "/work", windows, "", "")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating tmux window")
@@ -232,7 +237,7 @@ func TestKillSession(t *testing.T) {
 			"tmux has-session -t my-session": {},
 		}}
 
-		err := tmux.KillSession(r, "my-session")
+		err := tmux.KillSession(t.Context(), r, "my-session")
 		require.NoError(t, err)
 		assert.True(t, r.hasCall("kill-session -t my-session"))
 	})
@@ -242,7 +247,7 @@ func TestKillSession(t *testing.T) {
 			"tmux has-session -t my-session": {err: fmt.Errorf("no session")},
 		}}
 
-		err := tmux.KillSession(r, "my-session")
+		err := tmux.KillSession(t.Context(), r, "my-session")
 		require.NoError(t, err)
 		assert.False(t, r.hasCall("kill-session"))
 	})
@@ -252,7 +257,7 @@ func TestKillSession(t *testing.T) {
 			"tmux has-session -t feat-v2": {},
 		}}
 
-		err := tmux.KillSession(r, "feat.v2")
+		err := tmux.KillSession(t.Context(), r, "feat.v2")
 		require.NoError(t, err)
 		assert.True(t, r.hasCall("kill-session -t feat-v2"))
 	})
@@ -263,7 +268,7 @@ func TestConnect(t *testing.T) {
 		t.Setenv("TMUX", "")
 		r := &fakeRunner{responses: map[string]response{}}
 
-		err := tmux.Connect(r, "my-session")
+		err := tmux.Connect(t.Context(), r, "my-session")
 		require.NoError(t, err)
 		assert.True(t, r.hasCall("attach-session -t my-session"))
 	})
@@ -272,7 +277,7 @@ func TestConnect(t *testing.T) {
 		t.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
 		r := &fakeRunner{responses: map[string]response{}}
 
-		err := tmux.Connect(r, "my-session")
+		err := tmux.Connect(t.Context(), r, "my-session")
 		require.NoError(t, err)
 		assert.True(t, r.hasCall("switch-client -t my-session"))
 	})
@@ -281,7 +286,7 @@ func TestConnect(t *testing.T) {
 		t.Setenv("TMUX", "")
 		r := &fakeRunner{responses: map[string]response{}}
 
-		err := tmux.Connect(r, "feat.v2")
+		err := tmux.Connect(t.Context(), r, "feat.v2")
 		require.NoError(t, err)
 		assert.True(t, r.hasCall("attach-session -t feat-v2"))
 	})
@@ -293,7 +298,7 @@ func TestListSessions(t *testing.T) {
 			"tmux list-sessions -F #{session_name}": {out: "foo\nbar\nbaz"},
 		}}
 
-		sessions, err := tmux.ListSessions(r)
+		sessions, err := tmux.ListSessions(t.Context(), r)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"foo", "bar", "baz"}, sessions)
 	})
@@ -303,7 +308,7 @@ func TestListSessions(t *testing.T) {
 			"tmux list-sessions -F #{session_name}": {err: fmt.Errorf("no server running")},
 		}}
 
-		sessions, err := tmux.ListSessions(r)
+		sessions, err := tmux.ListSessions(t.Context(), r)
 		require.NoError(t, err)
 		assert.Nil(t, sessions)
 	})
@@ -313,7 +318,7 @@ func TestListSessions(t *testing.T) {
 			"tmux list-sessions -F #{session_name}": {out: ""},
 		}}
 
-		sessions, err := tmux.ListSessions(r)
+		sessions, err := tmux.ListSessions(t.Context(), r)
 		require.NoError(t, err)
 		assert.Nil(t, sessions)
 	})
@@ -325,13 +330,13 @@ func TestCurrentSessionName(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux display-message -p #{session_name}": {out: "my-session"},
 		}}
-		assert.Equal(t, "my-session", tmux.CurrentSessionName(r))
+		assert.Equal(t, "my-session", tmux.CurrentSessionName(t.Context(), r))
 	})
 
 	t.Run("empty when outside tmux", func(t *testing.T) {
 		t.Setenv("TMUX", "")
 		r := &fakeRunner{}
-		assert.Equal(t, "", tmux.CurrentSessionName(r))
+		assert.Equal(t, "", tmux.CurrentSessionName(t.Context(), r))
 	})
 
 	t.Run("empty on error", func(t *testing.T) {
@@ -339,14 +344,14 @@ func TestCurrentSessionName(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux display-message -p #{session_name}": {err: fmt.Errorf("failed")},
 		}}
-		assert.Equal(t, "", tmux.CurrentSessionName(r))
+		assert.Equal(t, "", tmux.CurrentSessionName(t.Context(), r))
 	})
 }
 
 func TestSwitchToLastSession(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{}}
-		err := tmux.SwitchToLastSession(r)
+		err := tmux.SwitchToLastSession(t.Context(), r)
 		require.NoError(t, err)
 		assert.True(t, r.hasCall("switch-client -l"))
 	})
@@ -355,7 +360,7 @@ func TestSwitchToLastSession(t *testing.T) {
 		r := &fakeRunner{responses: map[string]response{
 			"tmux switch-client -l": {err: fmt.Errorf("no last session")},
 		}}
-		err := tmux.SwitchToLastSession(r)
+		err := tmux.SwitchToLastSession(t.Context(), r)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "switching to last session")
 	})
@@ -477,7 +482,7 @@ func TestPaneBaseIndex(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &fakeRunner{responses: tt.resp}
-			assert.Equal(t, tt.want, tmux.PaneBaseIndex(r))
+			assert.Equal(t, tt.want, tmux.PaneBaseIndex(t.Context(), r))
 		})
 	}
 }
@@ -497,7 +502,7 @@ func TestCreateSession_PaneFocusWithBaseIndex(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-pane -t s:dev.1"))
@@ -511,7 +516,7 @@ func TestCreateSession_WindowFocus(t *testing.T) {
 		{Name: "editor", Command: "nvim .", Focus: true},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-window -t s:editor"))
@@ -532,7 +537,7 @@ func TestCreateSession_PaneFocus(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-pane -t s:dev.2"))
@@ -553,7 +558,7 @@ func TestCreateSession_WindowAndPaneFocus(t *testing.T) {
 		{Name: "shell", Focus: true},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, "s", "/work", windows, "", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("select-pane -t s:dev.0"))
@@ -568,7 +573,7 @@ func TestCreateSession_WithArgs(t *testing.T) {
 		{Name: "claude", Command: "claude {{.Args}}"},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "fix the bug", "")
+	err := tmux.CreateSession(t.Context(), r, "s", "/work", windows, "fix the bug", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t s:editor clear && nvim . Enter"))
@@ -588,7 +593,7 @@ func TestCreateSession_WithArgsInPanes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, "s", "/work", windows, "do something", "")
+	err := tmux.CreateSession(t.Context(), r, "s", "/work", windows, "do something", "")
 	require.NoError(t, err)
 
 	assert.True(t, r.hasCall("send-keys -t s:dev clear && claude 'do something' Enter"))

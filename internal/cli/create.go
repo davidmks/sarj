@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,11 +25,12 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 		Short: "Create a worktree with optional tmux session",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
 			if len(args) > 0 {
 				opts.Name = args[0]
 			}
 
-			mainWt, err := git.MainWorktree(r)
+			mainWt, err := git.MainWorktree(ctx, r)
 			if err != nil {
 				return err
 			}
@@ -45,7 +47,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 				opts.SkipSetup = true
 			}
 
-			wt, err := worktree.Create(r, cfg, opts)
+			wt, err := worktree.Create(ctx, r, cfg, opts)
 			if err != nil {
 				return err
 			}
@@ -60,7 +62,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 				if cmd.Flags().Changed("no-setup") && opts.SkipSetup {
 					setupCmd = ""
 				}
-				if err := createTmuxSession(r, cfg, wt, skipAttach, cmdArgs, setupCmd); err != nil {
+				if err := createTmuxSession(ctx, r, cfg, wt, skipAttach, cmdArgs, setupCmd); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: tmux session failed: %v\n", err)
 				}
 			}
@@ -80,13 +82,13 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 }
 
 // createTmuxSession creates a tmux session for the worktree and optionally connects.
-func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree, skipAttach bool, cmdArgs, setupCmd string) error {
-	if !tmux.IsInstalled(r) {
+func createTmuxSession(ctx context.Context, r exec.Runner, cfg *config.Config, wt *worktree.Worktree, skipAttach bool, cmdArgs, setupCmd string) error {
+	if !tmux.IsInstalled(ctx, r) {
 		fmt.Fprintln(os.Stderr, "warning: tmux not found, skipping session creation")
 		return nil
 	}
 
-	if err := tmux.CreateSession(r, wt.Branch, wt.Path, cfg.Tmux.Windows, cmdArgs, setupCmd); err != nil {
+	if err := tmux.CreateSession(ctx, r, wt.Branch, wt.Path, cfg.Tmux.Windows, cmdArgs, setupCmd); err != nil {
 		return err
 	}
 
@@ -97,5 +99,5 @@ func createTmuxSession(r exec.Runner, cfg *config.Config, wt *worktree.Worktree,
 		return nil
 	}
 
-	return tmux.Connect(r, wt.Branch)
+	return tmux.Connect(ctx, r, wt.Branch)
 }

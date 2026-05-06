@@ -242,6 +242,31 @@ split = "horizontal"
 
 Setup runs alongside your work instead of blocking. `--no-setup` only skips the synchronous `setup_command` run during `sarj create` (and forces it off even when `auto_setup = true`); it does not stop a tmux window or pane that has its own command. Use `--no-tmux` to skip the tmux session entirely.
 
+#### Status hook
+
+A shell command run per worktree. Trimmed stdout is the state. Non-zero exit, empty output, or timeout (default 10s, configurable) all map to `unknown`. Forge-agnostic — no `gh` dep, no caching.
+
+```toml
+[status]
+command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
+timeout = "10s"     # optional; accepts any time.ParseDuration value
+```
+
+`gh pr list --state all` is preferred over `gh pr view` so CLOSED-not-merged PRs are detected too. `--state` matches case-insensitively, so a hook returning `MERGED` matches `--state merged`.
+
+The branch name and worktree path are exposed as environment variables so values aren't interpolated into the shell command (no quoting, no injection):
+
+| Variable | Value |
+|----------|-------|
+| `$BRANCH` | Worktree branch name |
+| `$SARJ_WT_PATH` | Worktree absolute path |
+
+When configured, `sarj list` adds a `STATUS` column and populates the JSON `status` field, and `sarj delete --state merged` filters by the token. When unset, the column is omitted, JSON `status` is `null`, and `--state` errors. Compose with `jq` for ad-hoc filters:
+
+```sh
+sarj list -o json | jq -r '.[] | select(.status=="merged") | .name' | xargs sarj delete -y
+```
+
 ### Local: `.sarj.local.toml`
 
 Per-user overrides for a specific project — gitignored, never committed. Sections defined here replace the corresponding section from the project or global config. Generate with `sarj init --local`.
@@ -262,18 +287,20 @@ Create a worktree with optional tmux session.
 | `--no-tmux` | Skip tmux session |
 | `--no-attach` | Create session but don't attach |
 
-### `sarj delete <name> [flags]`
+### `sarj delete [name...] [flags]`
 
-Remove a worktree and kill its tmux session.
+Remove one or more worktrees and kill their tmux sessions. With no name, deletes the worktree at the current directory.
 
 | Flag | Description |
 |------|-------------|
 | `-D, --delete-branch` | Delete the branch (no prompt) |
 | `--keep-branch` | Keep the branch (no prompt) |
+| `-y, --yes` | Skip prompts (defaults to keep-branch) |
+| `--state <list>` | Filter by status hook output; repeat or comma-separate (e.g. `--state=merged,closed`) |
 
-### `sarj list`
+### `sarj list [-o text|json]`
 
-List worktrees with branch and tmux session status.
+List worktrees with branch, ahead/behind, last-commit age, dirty flag, and tmux session status. The `STATUS` column appears when a [status hook](#status-hook) is configured. `-o json` emits a stable schema for piping into `jq`.
 
 ### `sarj init [--global | --local]`
 
