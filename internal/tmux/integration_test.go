@@ -3,6 +3,7 @@
 package tmux_test
 
 import (
+	"context"
 	osexec "os/exec"
 	"testing"
 
@@ -26,7 +27,9 @@ func TestIntegration_CreateAndKillSession(t *testing.T) {
 
 	sessionName := "sarj-test-basic"
 	t.Cleanup(func() {
-		tmux.KillSession(t.Context(), r, sessionName)
+		// context.Background(), not t.Context(): t.Context is canceled
+		// before Cleanup runs, which would block the kill-session subprocess.
+		tmux.KillSession(context.Background(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -54,7 +57,9 @@ func TestIntegration_SessionWithPanes(t *testing.T) {
 
 	sessionName := "sarj-test-panes"
 	t.Cleanup(func() {
-		tmux.KillSession(t.Context(), r, sessionName)
+		// context.Background(), not t.Context(): t.Context is canceled
+		// before Cleanup runs, which would block the kill-session subprocess.
+		tmux.KillSession(context.Background(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -82,7 +87,9 @@ func TestIntegration_Focus(t *testing.T) {
 
 	sessionName := "sarj-test-focus"
 	t.Cleanup(func() {
-		tmux.KillSession(t.Context(), r, sessionName)
+		// context.Background(), not t.Context(): t.Context is canceled
+		// before Cleanup runs, which would block the kill-session subprocess.
+		tmux.KillSession(context.Background(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -114,7 +121,9 @@ func TestIntegration_ListSessions(t *testing.T) {
 
 	sessionName := "sarj-test-list"
 	t.Cleanup(func() {
-		tmux.KillSession(t.Context(), r, sessionName)
+		// context.Background(), not t.Context(): t.Context is canceled
+		// before Cleanup runs, which would block the kill-session subprocess.
+		tmux.KillSession(context.Background(), r, sessionName)
 	})
 
 	err := tmux.CreateSession(t.Context(), r, sessionName, t.TempDir(), nil, "", "")
@@ -131,7 +140,9 @@ func TestIntegration_SessionWithPaneSizes(t *testing.T) {
 
 	sessionName := "sarj-test-pane-sizes"
 	t.Cleanup(func() {
-		tmux.KillSession(t.Context(), r, sessionName)
+		// context.Background(), not t.Context(): t.Context is canceled
+		// before Cleanup runs, which would block the kill-session subprocess.
+		tmux.KillSession(context.Background(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -166,7 +177,7 @@ func TestIntegration_SanitizedSessionName(t *testing.T) {
 	r := &exec.DefaultRunner{}
 
 	t.Cleanup(func() {
-		tmux.KillSession(t.Context(), r, "feat.v2")
+		tmux.KillSession(context.Background(), r, "feat.v2")
 	})
 
 	err := tmux.CreateSession(t.Context(), r, "feat.v2", t.TempDir(), nil, "", "")

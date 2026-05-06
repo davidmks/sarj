@@ -4,6 +4,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	osexec "os/exec"
@@ -72,7 +73,9 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 	assert.True(t, tmux.SessionExists(t.Context(), r, "test-wt"))
 
 	t.Cleanup(func() {
-		tmux.KillSession(t.Context(), r, "test-wt")
+		// context.Background(), not t.Context(): t.Context is canceled
+		// before Cleanup runs, which would block the kill-session subprocess.
+		tmux.KillSession(context.Background(), r, "test-wt")
 	})
 
 	// Simulate running from inside the target worktree — the bug scenario
