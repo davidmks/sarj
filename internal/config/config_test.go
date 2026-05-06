@@ -317,3 +317,68 @@ split = "horizonal"
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid pane split")
 }
+
+func TestLoadWithPaths_StatusFromProject(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.project, `
+[status]
+command = "gh pr view {{.Branch}} --json state -q .state"
+`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.Equal(t, "gh pr view {{.Branch}} --json state -q .state", cfg.Status.Command)
+}
+
+func TestLoadWithPaths_StatusProjectOverridesGlobal(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.global, `
+[status]
+command = "global-cmd"
+`)
+	writeFile(t, p.project, `
+[status]
+command = "project-cmd"
+`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.Equal(t, "project-cmd", cfg.Status.Command)
+}
+
+func TestLoadWithPaths_StatusLocalOverridesProject(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.project, `
+[status]
+command = "project-cmd"
+`)
+	writeFile(t, p.local, `
+[status]
+command = "local-cmd"
+`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.Equal(t, "local-cmd", cfg.Status.Command)
+}
+
+func TestLoadWithPaths_StatusEmptyLocalDoesNotClobber(t *testing.T) {
+	p := newTestPaths(t)
+
+	writeFile(t, p.project, `
+[status]
+command = "project-cmd"
+`)
+	writeFile(t, p.local, `default_branch = "trunk"`)
+
+	cfg, err := config.LoadWithPaths(p.global, p.project, p.local, "myrepo")
+
+	require.NoError(t, err)
+	assert.Equal(t, "project-cmd", cfg.Status.Command)
+}

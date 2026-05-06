@@ -18,7 +18,8 @@ type Config struct {
 	DefaultBranch string `toml:"default_branch"`
 	AutoAttach    bool   `toml:"auto_attach"`
 
-	Tmux TmuxConfig `toml:"tmux"`
+	Tmux   TmuxConfig   `toml:"tmux"`
+	Status StatusConfig `toml:"status"`
 
 	// Per-project only fields
 	SetupCommand string   `toml:"setup_command"`
@@ -40,6 +41,18 @@ func (c *Config) IsAutoSetup() bool {
 type TmuxConfig struct {
 	Enabled bool           `toml:"enabled"`
 	Windows []WindowConfig `toml:"windows"`
+}
+
+// StatusConfig configures the optional per-worktree status hook.
+// Command is a shell snippet that reads $BRANCH and $SARJ_WT_PATH from the
+// environment; its trimmed stdout becomes the worktree's status. Non-zero
+// exit, empty output, or timeout map to "unknown".
+//
+// Timeout bounds each invocation. Empty string falls back to status.DefaultTimeout
+// (10s); the value is parsed by time.ParseDuration ("5s", "500ms", "1m").
+type StatusConfig struct {
+	Command string `toml:"command"`
+	Timeout string `toml:"timeout"`
 }
 
 // WindowConfig describes a single tmux window to create.
@@ -189,6 +202,12 @@ func merge(global, project *Config) {
 	if len(project.Tmux.Windows) > 0 {
 		global.Tmux.Windows = project.Tmux.Windows
 	}
+	if project.Status.Command != "" {
+		global.Status.Command = project.Status.Command
+	}
+	if project.Status.Timeout != "" {
+		global.Status.Timeout = project.Status.Timeout
+	}
 }
 
 // mergeLocal overlays local (per-user, per-project) fields onto the merged config.
@@ -211,6 +230,12 @@ func mergeLocal(base, local *Config) {
 	}
 	if len(local.Tmux.Windows) > 0 {
 		base.Tmux.Windows = local.Tmux.Windows
+	}
+	if local.Status.Command != "" {
+		base.Status.Command = local.Status.Command
+	}
+	if local.Status.Timeout != "" {
+		base.Status.Timeout = local.Status.Timeout
 	}
 }
 

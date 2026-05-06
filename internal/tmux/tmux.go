@@ -2,6 +2,7 @@
 package tmux
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -21,8 +22,8 @@ func SanitizeName(name string) string {
 }
 
 // IsInstalled checks whether the tmux binary works (not just present in PATH).
-func IsInstalled(r exec.Runner) bool {
-	_, err := r.Run("tmux", "-V")
+func IsInstalled(ctx context.Context, r exec.Runner) bool {
+	_, err := r.Run(ctx, "tmux", "-V")
 	return err == nil
 }
 
@@ -32,8 +33,8 @@ func IsInsideSession() bool {
 }
 
 // SessionExists checks whether a tmux session with the given name exists.
-func SessionExists(r exec.Runner, name string) bool {
-	_, err := r.Run("tmux", "has-session", "-t", SanitizeName(name))
+func SessionExists(ctx context.Context, r exec.Runner, name string) bool {
+	_, err := r.Run(ctx, "tmux", "has-session", "-t", SanitizeName(name))
 	return err == nil
 }
 
@@ -41,7 +42,7 @@ func SessionExists(r exec.Runner, name string) bool {
 // The session is created in detached mode; call Connect to connect.
 // cmdArgs is substituted into commands containing {{.Args}}; setupCommand is
 // substituted into commands containing {{.SetupCommand}}.
-func CreateSession(r exec.Runner, name, path string, windows []config.WindowConfig, cmdArgs, setupCommand string) error {
+func CreateSession(ctx context.Context, r exec.Runner, name, path string, windows []config.WindowConfig, cmdArgs, setupCommand string) error {
 	name = SanitizeName(name)
 
 	if len(windows) == 0 {
@@ -50,31 +51,31 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 
 	// Query pane-base-index up front so no tmux round-trip sits between
 	// the last send-keys and select-window.
-	baseIdx := paneBaseIndex(r)
+	baseIdx := paneBaseIndex(ctx, r)
 
 	first := windows[0]
 	args := []string{"new-session", "-d", "-s", name, "-c", path, "-n", first.Name}
-	if _, err := r.Run("tmux", args...); err != nil {
+	if _, err := r.Run(ctx, "tmux", args...); err != nil {
 		return fmt.Errorf("creating tmux session %s: %w", name, err)
 	}
 
-	if err := sendWindowCommand(r, name, first, cmdArgs, setupCommand); err != nil {
+	if err := sendWindowCommand(ctx, r, name, first, cmdArgs, setupCommand); err != nil {
 		return err
 	}
-	if err := createPanes(r, name, first, path, cmdArgs, setupCommand); err != nil {
+	if err := createPanes(ctx, r, name, first, path, cmdArgs, setupCommand); err != nil {
 		return err
 	}
 
 	for _, w := range windows[1:] {
 		wArgs := []string{"new-window", "-t", name, "-n", w.Name, "-c", path}
-		if _, err := r.Run("tmux", wArgs...); err != nil {
+		if _, err := r.Run(ctx, "tmux", wArgs...); err != nil {
 			return fmt.Errorf("creating tmux window %s: %w", w.Name, err)
 		}
 
-		if err := sendWindowCommand(r, name, w, cmdArgs, setupCommand); err != nil {
+		if err := sendWindowCommand(ctx, r, name, w, cmdArgs, setupCommand); err != nil {
 			return err
 		}
-		if err := createPanes(r, name, w, path, cmdArgs, setupCommand); err != nil {
+		if err := createPanes(ctx, r, name, w, path, cmdArgs, setupCommand); err != nil {
 			return err
 		}
 	}
@@ -82,7 +83,7 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 	for _, w := range windows {
 		if idx, ok := focusedPaneIndex(w); ok {
 			target := fmt.Sprintf("%s:%s.%d", name, w.Name, idx+baseIdx)
-			if _, err := r.Run("tmux", "select-pane", "-t", target); err != nil {
+			if _, err := r.Run(ctx, "tmux", "select-pane", "-t", target); err != nil {
 				return fmt.Errorf("selecting pane in window %s: %w", w.Name, err)
 			}
 		}
@@ -94,7 +95,7 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 			focusWindow = w.Name
 		}
 	}
-	if _, err := r.Run("tmux", "select-window", "-t", name+":"+focusWindow); err != nil {
+	if _, err := r.Run(ctx, "tmux", "select-window", "-t", name+":"+focusWindow); err != nil {
 		return fmt.Errorf("selecting window: %w", err)
 	}
 
@@ -103,7 +104,7 @@ func CreateSession(r exec.Runner, name, path string, windows []config.WindowConf
 
 // sendWindowCommand sends the composed command to a window via send-keys.
 // When panes are configured, the first pane's command replaces the window command.
-func sendWindowCommand(r exec.Runner, session string, w config.WindowConfig, cmdArgs, setupCommand string) error {
+func sendWindowCommand(ctx context.Context, r exec.Runner, session string, w config.WindowConfig, cmdArgs, setupCommand string) error {
 	cmd := w.Command
 	if len(w.Panes) > 0 {
 		cmd = w.Panes[0].Command
@@ -111,7 +112,7 @@ func sendWindowCommand(r exec.Runner, session string, w config.WindowConfig, cmd
 
 	full := BuildCommand(w.EnvFile, w.Env, cmd, cmdArgs, setupCommand)
 	target := session + ":" + w.Name
-	if _, err := r.Run("tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
+	if _, err := r.Run(ctx, "tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
 		return fmt.Errorf("sending command to window %s: %w", w.Name, err)
 	}
 	return nil
@@ -120,7 +121,7 @@ func sendWindowCommand(r exec.Runner, session string, w config.WindowConfig, cmd
 // createPanes splits the window into additional panes.
 // The first pane's command is already handled by sendWindowCommand;
 // subsequent entries create splits.
-func createPanes(r exec.Runner, session string, w config.WindowConfig, path, cmdArgs, setupCommand string) error {
+func createPanes(ctx context.Context, r exec.Runner, session string, w config.WindowConfig, path, cmdArgs, setupCommand string) error {
 	if len(w.Panes) <= 1 {
 		return nil
 	}
@@ -139,13 +140,13 @@ func createPanes(r exec.Runner, session string, w config.WindowConfig, path, cmd
 			splitArgs = append(splitArgs, "-l", fmt.Sprintf("%d%%", p.Size))
 		}
 
-		if _, err := r.Run("tmux", splitArgs...); err != nil {
+		if _, err := r.Run(ctx, "tmux", splitArgs...); err != nil {
 			return fmt.Errorf("splitting pane in window %s: %w", w.Name, err)
 		}
 
 		// Panes inherit env/env_file from parent window
 		full := BuildCommand(w.EnvFile, w.Env, p.Command, cmdArgs, setupCommand)
-		if _, err := r.Run("tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
+		if _, err := r.Run(ctx, "tmux", "send-keys", "-t", target, full, "Enter"); err != nil {
 			return fmt.Errorf("sending command to pane in %s: %w", w.Name, err)
 		}
 	}
@@ -155,8 +156,8 @@ func createPanes(r exec.Runner, session string, w config.WindowConfig, path, cmd
 
 // paneBaseIndex returns the tmux pane-base-index setting.
 // Falls back to 0 (the tmux default) if the option cannot be read.
-func paneBaseIndex(r exec.Runner) int {
-	out, err := r.Run("tmux", "show-option", "-gv", "pane-base-index")
+func paneBaseIndex(ctx context.Context, r exec.Runner) int {
+	out, err := r.Run(ctx, "tmux", "show-option", "-gv", "pane-base-index")
 	if err != nil {
 		return 0
 	}
@@ -186,12 +187,12 @@ func focusedPaneIndex(w config.WindowConfig) (int, bool) {
 }
 
 // KillSession destroys a tmux session. Returns nil if the session doesn't exist.
-func KillSession(r exec.Runner, name string) error {
+func KillSession(ctx context.Context, r exec.Runner, name string) error {
 	name = SanitizeName(name)
-	if !SessionExists(r, name) {
+	if !SessionExists(ctx, r, name) {
 		return nil
 	}
-	if _, err := r.Run("tmux", "kill-session", "-t", name); err != nil {
+	if _, err := r.Run(ctx, "tmux", "kill-session", "-t", name); err != nil {
 		return fmt.Errorf("killing tmux session %s: %w", name, err)
 	}
 	return nil
@@ -199,11 +200,11 @@ func KillSession(r exec.Runner, name string) error {
 
 // CurrentSessionName returns the name of the tmux session that the current
 // process is running in. Returns "" if not inside tmux or on error.
-func CurrentSessionName(r exec.Runner) string {
+func CurrentSessionName(ctx context.Context, r exec.Runner) string {
 	if !IsInsideSession() {
 		return ""
 	}
-	out, err := r.Run("tmux", "display-message", "-p", "#{session_name}")
+	out, err := r.Run(ctx, "tmux", "display-message", "-p", "#{session_name}")
 	if err != nil {
 		return ""
 	}
@@ -212,8 +213,8 @@ func CurrentSessionName(r exec.Runner) string {
 
 // SwitchToLastSession switches the tmux client to the previous session.
 // Returns an error if there is no previous session to switch to.
-func SwitchToLastSession(r exec.Runner) error {
-	_, err := r.Run("tmux", "switch-client", "-l")
+func SwitchToLastSession(ctx context.Context, r exec.Runner) error {
+	_, err := r.Run(ctx, "tmux", "switch-client", "-l")
 	if err != nil {
 		return fmt.Errorf("switching to last session: %w", err)
 	}
@@ -222,17 +223,17 @@ func SwitchToLastSession(r exec.Runner) error {
 
 // Connect connects to a tmux session. If already inside tmux, it
 // switches the client; otherwise it attaches.
-func Connect(r exec.Runner, name string) error {
+func Connect(ctx context.Context, r exec.Runner, name string) error {
 	name = SanitizeName(name)
 	if IsInsideSession() {
-		return r.RunInteractive("tmux", "switch-client", "-t", name)
+		return r.RunInteractive(ctx, "tmux", "switch-client", "-t", name)
 	}
-	return r.RunInteractive("tmux", "attach-session", "-t", name)
+	return r.RunInteractive(ctx, "tmux", "attach-session", "-t", name)
 }
 
 // ListSessions returns the names of all active tmux sessions.
-func ListSessions(r exec.Runner) ([]string, error) {
-	out, err := r.Run("tmux", "list-sessions", "-F", "#{session_name}")
+func ListSessions(ctx context.Context, r exec.Runner) ([]string, error) {
+	out, err := r.Run(ctx, "tmux", "list-sessions", "-F", "#{session_name}")
 	if err != nil {
 		// tmux exits non-zero when no server is running
 		if strings.Contains(err.Error(), "no server running") || strings.Contains(err.Error(), "no current client") {
