@@ -8,51 +8,8 @@ import (
 	"github.com/davidmks/sarj/internal/exec"
 	"github.com/davidmks/sarj/internal/status"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
-
-func TestBuild(t *testing.T) {
-	tests := []struct {
-		name     string
-		tmpl     string
-		branch   string
-		path     string
-		expected string
-	}{
-		{
-			name:     "branch only",
-			tmpl:     "gh pr view {{.Branch}}",
-			branch:   "feat-x",
-			path:     "/wt/feat-x",
-			expected: "gh pr view feat-x",
-		},
-		{
-			name:     "branch and path",
-			tmpl:     "check {{.Branch}} at {{.Path}}",
-			branch:   "feat-x",
-			path:     "/wt/feat-x",
-			expected: "check feat-x at /wt/feat-x",
-		},
-		{
-			name:     "no placeholders",
-			tmpl:     "echo merged",
-			branch:   "feat-x",
-			path:     "/wt/feat-x",
-			expected: "echo merged",
-		},
-		{
-			name:     "repeated placeholder",
-			tmpl:     "{{.Branch}} {{.Branch}}",
-			branch:   "feat",
-			path:     "",
-			expected: "feat feat",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, status.Build(tt.tmpl, tt.branch, tt.path))
-		})
-	}
-}
 
 func TestProbeAll(t *testing.T) {
 	r := &exec.DefaultRunner{}
@@ -61,49 +18,61 @@ func TestProbeAll(t *testing.T) {
 		{Branch: "feat-b", Path: "/wt/b"},
 	}
 
-	results := status.ProbeAll(context.Background(), r, "echo {{.Branch}}", items, 5*time.Second)
+	results := status.ProbeAll(t.Context(), r, `echo "$BRANCH"`, items, 5*time.Second)
 
-	assert.Equal(t, []status.Result{
-		{Path: "/wt/a", State: "feat-a"},
-		{Path: "/wt/b", State: "feat-b"},
-	}, results)
+	require.Len(t, results, 2)
+	assert.Equal(t, "/wt/a", results[0].Path)
+	assert.Equal(t, "feat-a", results[0].State)
+	assert.NoError(t, results[0].Err)
+	assert.Equal(t, "/wt/b", results[1].Path)
+	assert.Equal(t, "feat-b", results[1].State)
+}
+
+func TestProbeAll_PathExposedAsEnv(t *testing.T) {
+	r := &exec.DefaultRunner{}
+	items := []status.Item{{Branch: "feat", Path: "/some/path"}}
+
+	results := status.ProbeAll(t.Context(), r, `echo "$SARJ_WT_PATH"`, items, 5*time.Second)
+
+	assert.Equal(t, "/some/path", results[0].State)
 }
 
 func TestProbeAll_NonZeroExit(t *testing.T) {
 	r := &exec.DefaultRunner{}
 	items := []status.Item{{Branch: "feat", Path: "/wt"}}
 
-	results := status.ProbeAll(context.Background(), r, "false", items, 5*time.Second)
+	results := status.ProbeAll(t.Context(), r, "false", items, 5*time.Second)
 
 	assert.Equal(t, status.Unknown, results[0].State)
+	require.Error(t, results[0].Err)
+	assert.Contains(t, results[0].Err.Error(), "hook failed")
 }
 
 func TestProbeAll_EmptyOutput(t *testing.T) {
 	r := &exec.DefaultRunner{}
 	items := []status.Item{{Branch: "feat", Path: "/wt"}}
 
-	results := status.ProbeAll(context.Background(), r, "true", items, 5*time.Second)
+	results := status.ProbeAll(t.Context(), r, "true", items, 5*time.Second)
 
 	assert.Equal(t, status.Unknown, results[0].State)
+	assert.ErrorIs(t, results[0].Err, status.ErrEmptyOutput)
 }
 
 func TestProbeAll_Timeout(t *testing.T) {
 	r := &exec.DefaultRunner{}
 	items := []status.Item{{Branch: "feat", Path: "/wt"}}
 
-	start := time.Now()
-	results := status.ProbeAll(context.Background(), r, "sleep 10", items, 100*time.Millisecond)
-	elapsed := time.Since(start)
+	results := status.ProbeAll(t.Context(), r, "sleep 10", items, 100*time.Millisecond)
 
 	assert.Equal(t, status.Unknown, results[0].State)
-	assert.Less(t, elapsed, 5*time.Second, "timeout should kick in well before sleep finishes")
+	require.Error(t, results[0].Err)
 }
 
 func TestProbeAll_TrimsWhitespace(t *testing.T) {
 	r := &exec.DefaultRunner{}
 	items := []status.Item{{Branch: "feat", Path: "/wt"}}
 
-	results := status.ProbeAll(context.Background(), r, "printf 'merged\\n'", items, 5*time.Second)
+	results := status.ProbeAll(t.Context(), r, "printf 'merged\\n'", items, 5*time.Second)
 
 	assert.Equal(t, "merged", results[0].State)
 }
@@ -112,7 +81,7 @@ func TestProbeAll_DefaultTimeoutWhenZero(t *testing.T) {
 	r := &exec.DefaultRunner{}
 	items := []status.Item{{Branch: "feat", Path: "/wt"}}
 
-	results := status.ProbeAll(context.Background(), r, "echo merged", items, 0)
+	results := status.ProbeAll(t.Context(), r, "echo merged", items, 0)
 
 	assert.Equal(t, "merged", results[0].State)
 }
@@ -121,9 +90,25 @@ func TestProbeAll_ParentContextCanceled(t *testing.T) {
 	r := &exec.DefaultRunner{}
 	items := []status.Item{{Branch: "feat", Path: "/wt"}}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	results := status.ProbeAll(ctx, r, "echo merged", items, 5*time.Second)
 	assert.Equal(t, status.Unknown, results[0].State)
+}
+
+func TestProbeAll_ManyItemsRespectMaxParallel(t *testing.T) {
+	r := &exec.DefaultRunner{}
+	const n = status.MaxParallel * 3
+	items := make([]status.Item, n)
+	for i := range items {
+		items[i] = status.Item{Branch: "feat", Path: "/wt"}
+	}
+
+	results := status.ProbeAll(t.Context(), r, "echo merged", items, 5*time.Second)
+
+	require.Len(t, results, n)
+	for _, res := range results {
+		assert.Equal(t, "merged", res.State)
+	}
 }

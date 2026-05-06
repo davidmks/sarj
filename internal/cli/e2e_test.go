@@ -38,14 +38,14 @@ func initTestRepo(t *testing.T) string {
 		{"git", "config", "user.email", "test@test.com"},
 		{"git", "config", "user.name", "Test"},
 	} {
-		_, err := r.Run(cmd[0], cmd[1:]...)
+		_, err := r.Run(t.Context(), cmd[0], cmd[1:]...)
 		require.NoError(t, err)
 	}
 
 	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("# test"), 0o600))
-	_, err = r.Run("git", "add", ".")
+	_, err = r.Run(t.Context(), "git", "add", ".")
 	require.NoError(t, err)
-	_, err = r.Run("git", "commit", "-m", "init")
+	_, err = r.Run(t.Context(), "git", "commit", "-m", "init")
 	require.NoError(t, err)
 
 	return repoPath
@@ -69,10 +69,10 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 
 	wtPath := filepath.Join(wtBase, "test-wt")
 	assert.DirExists(t, wtPath)
-	assert.True(t, tmux.SessionExists(r, "test-wt"))
+	assert.True(t, tmux.SessionExists(t.Context(), r, "test-wt"))
 
 	t.Cleanup(func() {
-		tmux.KillSession(r, "test-wt")
+		tmux.KillSession(t.Context(), r, "test-wt")
 	})
 
 	// Simulate running from inside the target worktree — the bug scenario
@@ -89,10 +89,10 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 
 	assert.Contains(t, buf.String(), "branch deleted")
 	assert.NoDirExists(t, wtPath)
-	assert.False(t, tmux.SessionExists(r, "test-wt"))
+	assert.False(t, tmux.SessionExists(t.Context(), r, "test-wt"))
 
 	rMain := &exec.DefaultRunner{Dir: repoPath}
-	_, err = rMain.Run("git", "show-ref", "--verify", "--quiet", "refs/heads/test-wt")
+	_, err = rMain.Run(t.Context(), "git", "show-ref", "--verify", "--quiet", "refs/heads/test-wt")
 	assert.Error(t, err, "branch should be deleted")
 }
 
@@ -106,29 +106,29 @@ func TestIntegration_ListEnriched(t *testing.T) {
 	remotePath, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	rRemote := &exec.DefaultRunner{Dir: remotePath}
-	_, err = rRemote.Run("git", "init", "--bare", "--initial-branch=main")
+	_, err = rRemote.Run(t.Context(), "git", "init", "--bare", "--initial-branch=main")
 	require.NoError(t, err)
 
 	repoPath := initTestRepo(t)
 	r := &exec.DefaultRunner{Dir: repoPath}
-	_, err = r.Run("git", "remote", "add", "origin", remotePath)
+	_, err = r.Run(t.Context(), "git", "remote", "add", "origin", remotePath)
 	require.NoError(t, err)
-	_, err = r.Run("git", "push", "-u", "origin", "main")
+	_, err = r.Run(t.Context(), "git", "push", "-u", "origin", "main")
 	require.NoError(t, err)
 
 	wtBase, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	wtPath := filepath.Join(wtBase, "feat")
-	_, err = r.Run("git", "worktree", "add", "-b", "feat", wtPath)
+	_, err = r.Run(t.Context(), "git", "worktree", "add", "-b", "feat", wtPath)
 	require.NoError(t, err)
 
 	rWt := &exec.DefaultRunner{Dir: wtPath}
-	_, err = rWt.Run("git", "push", "-u", "origin", "feat")
+	_, err = rWt.Run(t.Context(), "git", "push", "-u", "origin", "feat")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(wtPath, "work.txt"), []byte("local work"), 0o600))
-	_, err = rWt.Run("git", "add", ".")
+	_, err = rWt.Run(t.Context(), "git", "add", ".")
 	require.NoError(t, err)
-	_, err = rWt.Run("git", "commit", "-m", "local commit")
+	_, err = rWt.Run(t.Context(), "git", "commit", "-m", "local commit")
 	require.NoError(t, err)
 
 	// Uncommitted file → dirty=true.
@@ -176,11 +176,11 @@ func TestIntegration_ListWithStatusHook(t *testing.T) {
 	wtBase, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
 	wtPath := filepath.Join(wtBase, "feat")
-	_, err = r.Run("git", "worktree", "add", "-b", "feat", wtPath)
+	_, err = r.Run(t.Context(), "git", "worktree", "add", "-b", "feat", wtPath)
 	require.NoError(t, err)
 
-	// Hook echoes the branch name so we can verify templating end-to-end.
-	cfg := "[status]\ncommand = \"echo merged-{{.Branch}}\"\n"
+	// Hook echoes $BRANCH so we can verify env-var injection end-to-end.
+	cfg := "[status]\ncommand = \"echo merged-$BRANCH\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(repoPath, ".sarj.toml"), []byte(cfg), 0o600))
 
 	cmd := cli.NewRootCmd("test", r)

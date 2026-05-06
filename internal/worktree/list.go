@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -9,8 +10,8 @@ import (
 )
 
 // List returns all worktrees by parsing `git worktree list --porcelain`.
-func List(r exec.Runner) ([]Worktree, error) {
-	out, err := r.Run("git", "worktree", "list", "--porcelain")
+func List(ctx context.Context, r exec.Runner) ([]Worktree, error) {
+	out, err := r.Run(ctx, "git", "worktree", "list", "--porcelain")
 	if err != nil {
 		return nil, fmt.Errorf("listing worktrees: %w", err)
 	}

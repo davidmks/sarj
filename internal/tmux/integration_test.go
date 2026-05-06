@@ -26,7 +26,7 @@ func TestIntegration_CreateAndKillSession(t *testing.T) {
 
 	sessionName := "sarj-test-basic"
 	t.Cleanup(func() {
-		tmux.KillSession(r, sessionName)
+		tmux.KillSession(t.Context(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -34,18 +34,18 @@ func TestIntegration_CreateAndKillSession(t *testing.T) {
 		{Name: "editor", Command: "echo hello"},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, sessionName, t.TempDir(), windows, "", "")
 	require.NoError(t, err)
-	assert.True(t, tmux.SessionExists(r, sessionName))
+	assert.True(t, tmux.SessionExists(t.Context(), r, sessionName))
 
-	out, err := r.Run("tmux", "list-windows", "-t", sessionName, "-F", "#{window_name}")
+	out, err := r.Run(t.Context(), "tmux", "list-windows", "-t", sessionName, "-F", "#{window_name}")
 	require.NoError(t, err)
 	assert.Contains(t, out, "terminal")
 	assert.Contains(t, out, "editor")
 
-	err = tmux.KillSession(r, sessionName)
+	err = tmux.KillSession(t.Context(), r, sessionName)
 	require.NoError(t, err)
-	assert.False(t, tmux.SessionExists(r, sessionName))
+	assert.False(t, tmux.SessionExists(t.Context(), r, sessionName))
 }
 
 func TestIntegration_SessionWithPanes(t *testing.T) {
@@ -54,7 +54,7 @@ func TestIntegration_SessionWithPanes(t *testing.T) {
 
 	sessionName := "sarj-test-panes"
 	t.Cleanup(func() {
-		tmux.KillSession(r, sessionName)
+		tmux.KillSession(t.Context(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -67,10 +67,10 @@ func TestIntegration_SessionWithPanes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, sessionName, t.TempDir(), windows, "", "")
 	require.NoError(t, err)
 
-	out, err := r.Run("tmux", "list-panes", "-t", sessionName+":dev", "-F", "#{pane_index}")
+	out, err := r.Run(t.Context(), "tmux", "list-panes", "-t", sessionName+":dev", "-F", "#{pane_index}")
 	require.NoError(t, err)
 	assert.Contains(t, out, "0")
 	assert.Contains(t, out, "1")
@@ -82,7 +82,7 @@ func TestIntegration_Focus(t *testing.T) {
 
 	sessionName := "sarj-test-focus"
 	t.Cleanup(func() {
-		tmux.KillSession(r, sessionName)
+		tmux.KillSession(t.Context(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -96,14 +96,14 @@ func TestIntegration_Focus(t *testing.T) {
 		{Name: "shell", Focus: true},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, sessionName, t.TempDir(), windows, "", "")
 	require.NoError(t, err)
 
-	activeWindow, err := r.Run("tmux", "display-message", "-t", sessionName, "-p", "#{window_name}")
+	activeWindow, err := r.Run(t.Context(), "tmux", "display-message", "-t", sessionName, "-p", "#{window_name}")
 	require.NoError(t, err)
 	assert.Equal(t, "shell", activeWindow)
 
-	activePane, err := r.Run("tmux", "display-message", "-t", sessionName+":dev", "-p", "#{pane_index}")
+	activePane, err := r.Run(t.Context(), "tmux", "display-message", "-t", sessionName+":dev", "-p", "#{pane_index}")
 	require.NoError(t, err)
 	assert.Equal(t, "0", activePane)
 }
@@ -114,13 +114,13 @@ func TestIntegration_ListSessions(t *testing.T) {
 
 	sessionName := "sarj-test-list"
 	t.Cleanup(func() {
-		tmux.KillSession(r, sessionName)
+		tmux.KillSession(t.Context(), r, sessionName)
 	})
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), nil, "", "")
+	err := tmux.CreateSession(t.Context(), r, sessionName, t.TempDir(), nil, "", "")
 	require.NoError(t, err)
 
-	sessions, err := tmux.ListSessions(r)
+	sessions, err := tmux.ListSessions(t.Context(), r)
 	require.NoError(t, err)
 	assert.Contains(t, sessions, sessionName)
 }
@@ -131,7 +131,7 @@ func TestIntegration_SessionWithPaneSizes(t *testing.T) {
 
 	sessionName := "sarj-test-pane-sizes"
 	t.Cleanup(func() {
-		tmux.KillSession(r, sessionName)
+		tmux.KillSession(t.Context(), r, sessionName)
 	})
 
 	windows := []config.WindowConfig{
@@ -144,10 +144,10 @@ func TestIntegration_SessionWithPaneSizes(t *testing.T) {
 		},
 	}
 
-	err := tmux.CreateSession(r, sessionName, t.TempDir(), windows, "", "")
+	err := tmux.CreateSession(t.Context(), r, sessionName, t.TempDir(), windows, "", "")
 	require.NoError(t, err)
 
-	out, err := r.Run("tmux", "list-panes", "-t", sessionName+":dev", "-F", "#{pane_index}")
+	out, err := r.Run(t.Context(), "tmux", "list-panes", "-t", sessionName+":dev", "-F", "#{pane_index}")
 	require.NoError(t, err)
 	assert.Contains(t, out, "0")
 	assert.Contains(t, out, "1")
@@ -157,7 +157,7 @@ func TestIntegration_KillNonexistentSession(t *testing.T) {
 	requireTmux(t)
 	r := &exec.DefaultRunner{}
 
-	err := tmux.KillSession(r, "sarj-definitely-not-a-session")
+	err := tmux.KillSession(t.Context(), r, "sarj-definitely-not-a-session")
 	require.NoError(t, err)
 }
 
@@ -166,12 +166,12 @@ func TestIntegration_SanitizedSessionName(t *testing.T) {
 	r := &exec.DefaultRunner{}
 
 	t.Cleanup(func() {
-		tmux.KillSession(r, "feat.v2")
+		tmux.KillSession(t.Context(), r, "feat.v2")
 	})
 
-	err := tmux.CreateSession(r, "feat.v2", t.TempDir(), nil, "", "")
+	err := tmux.CreateSession(t.Context(), r, "feat.v2", t.TempDir(), nil, "", "")
 	require.NoError(t, err)
 
-	assert.True(t, tmux.SessionExists(r, "feat-v2"))
-	assert.True(t, tmux.SessionExists(r, "feat.v2"), "unsanitized name should also resolve")
+	assert.True(t, tmux.SessionExists(t.Context(), r, "feat-v2"))
+	assert.True(t, tmux.SessionExists(t.Context(), r, "feat.v2"), "unsanitized name should also resolve")
 }

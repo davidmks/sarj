@@ -2,6 +2,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -11,12 +12,12 @@ import (
 
 // CommandRunner is the subset of exec.Runner that this package needs.
 type CommandRunner interface {
-	Run(name string, args ...string) (string, error)
+	Run(ctx context.Context, name string, args ...string) (string, error)
 }
 
 // RepoRoot returns the absolute path to the repository root.
-func RepoRoot(r CommandRunner) (string, error) {
-	out, err := r.Run("git", "rev-parse", "--show-toplevel")
+func RepoRoot(ctx context.Context, r CommandRunner) (string, error) {
+	out, err := r.Run(ctx, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("finding repo root: %w", err)
 	}
@@ -25,8 +26,8 @@ func RepoRoot(r CommandRunner) (string, error) {
 
 // MainWorktree returns the path of the main (first) worktree.
 // Git always lists the main worktree first in `git worktree list`.
-func MainWorktree(r CommandRunner) (string, error) {
-	out, err := r.Run("git", "worktree", "list", "--porcelain")
+func MainWorktree(ctx context.Context, r CommandRunner) (string, error) {
+	out, err := r.Run(ctx, "git", "worktree", "list", "--porcelain")
 	if err != nil {
 		return "", fmt.Errorf("listing worktrees: %w", err)
 	}
@@ -43,8 +44,8 @@ func MainWorktree(r CommandRunner) (string, error) {
 
 // DefaultBranch detects the default branch by checking the remote HEAD ref.
 // Falls back to "main" if detection fails.
-func DefaultBranch(r CommandRunner) string {
-	out, err := r.Run("git", "symbolic-ref", "refs/remotes/origin/HEAD")
+func DefaultBranch(ctx context.Context, r CommandRunner) string {
+	out, err := r.Run(ctx, "git", "symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
 		return "main"
 	}
@@ -59,8 +60,8 @@ func DefaultBranch(r CommandRunner) string {
 }
 
 // Fetch runs git fetch for the given remote.
-func Fetch(r CommandRunner, remote string) error {
-	_, err := r.Run("git", "fetch", remote)
+func Fetch(ctx context.Context, r CommandRunner, remote string) error {
+	_, err := r.Run(ctx, "git", "fetch", remote)
 	if err != nil {
 		return fmt.Errorf("fetching %s: %w", remote, err)
 	}
@@ -68,21 +69,21 @@ func Fetch(r CommandRunner, remote string) error {
 }
 
 // BranchExists checks if a local branch with the given name exists.
-func BranchExists(r CommandRunner, name string) bool {
-	_, err := r.Run("git", "show-ref", "--verify", "--quiet", "refs/heads/"+name)
+func BranchExists(ctx context.Context, r CommandRunner, name string) bool {
+	_, err := r.Run(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+name)
 	return err == nil
 }
 
 // RemoteRefExists checks if a remote-tracking ref exists (e.g., "origin/main").
-func RemoteRefExists(r CommandRunner, ref string) bool {
-	_, err := r.Run("git", "show-ref", "--verify", "--quiet", "refs/remotes/"+ref)
+func RemoteRefExists(ctx context.Context, r CommandRunner, ref string) bool {
+	_, err := r.Run(ctx, "git", "show-ref", "--verify", "--quiet", "refs/remotes/"+ref)
 	return err == nil
 }
 
 // CommitsBehind returns the number of commits local is behind remote.
 // Both refs are used as-is (e.g., "main", "origin/main"). Returns 0 if the comparison fails.
-func CommitsBehind(r CommandRunner, local, remote string) int {
-	out, err := r.Run("git", "rev-list", "--count", local+".."+remote)
+func CommitsBehind(ctx context.Context, r CommandRunner, local, remote string) int {
+	out, err := r.Run(ctx, "git", "rev-list", "--count", local+".."+remote)
 	if err != nil {
 		return 0
 	}
@@ -95,8 +96,8 @@ func CommitsBehind(r CommandRunner, local, remote string) int {
 
 // Dirty reports whether the worktree at path has uncommitted changes
 // (modified, staged, or untracked).
-func Dirty(r CommandRunner, path string) (bool, error) {
-	out, err := r.Run("git", "-C", path, "status", "--porcelain")
+func Dirty(ctx context.Context, r CommandRunner, path string) (bool, error) {
+	out, err := r.Run(ctx, "git", "-C", path, "status", "--porcelain")
 	if err != nil {
 		return false, fmt.Errorf("checking dirty state: %w", err)
 	}
@@ -105,8 +106,8 @@ func Dirty(r CommandRunner, path string) (bool, error) {
 
 // HeadInfo returns the subject and committer date of HEAD for the worktree at
 // path. Date is parsed from strict ISO-8601 (%cI), which is RFC3339-compatible.
-func HeadInfo(r CommandRunner, path string) (subject string, date time.Time, err error) {
-	out, err := r.Run("git", "-C", path, "log", "-1", "--format=%cI%n%s")
+func HeadInfo(ctx context.Context, r CommandRunner, path string) (subject string, date time.Time, err error) {
+	out, err := r.Run(ctx, "git", "-C", path, "log", "-1", "--format=%cI%n%s")
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("reading head info: %w", err)
 	}
@@ -123,8 +124,8 @@ func HeadInfo(r CommandRunner, path string) (subject string, date time.Time, err
 
 // Upstream returns the remote and branch of the configured upstream for the
 // worktree at path. Returns an error if no upstream is configured.
-func Upstream(r CommandRunner, path string) (remote, branch string, err error) {
-	out, err := r.Run("git", "-C", path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+func Upstream(ctx context.Context, r CommandRunner, path string) (remote, branch string, err error) {
+	out, err := r.Run(ctx, "git", "-C", path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 	if err != nil {
 		return "", "", fmt.Errorf("resolving upstream: %w", err)
 	}
@@ -141,8 +142,8 @@ func Upstream(r CommandRunner, path string) (remote, branch string, err error) {
 
 // AheadBehind returns the number of commits HEAD is ahead and behind upstream
 // for the worktree at path. The upstream ref is used as-is (e.g. "origin/main").
-func AheadBehind(r CommandRunner, path, upstream string) (ahead, behind int, err error) {
-	out, err := r.Run("git", "-C", path, "rev-list", "--left-right", "--count", "HEAD..."+upstream)
+func AheadBehind(ctx context.Context, r CommandRunner, path, upstream string) (ahead, behind int, err error) {
+	out, err := r.Run(ctx, "git", "-C", path, "rev-list", "--left-right", "--count", "HEAD..."+upstream)
 	if err != nil {
 		return 0, 0, fmt.Errorf("counting ahead/behind: %w", err)
 	}

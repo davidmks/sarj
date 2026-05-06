@@ -89,13 +89,17 @@ const projectConfigTemplate = `# sarj per-project configuration
 # command = "make dev"
 
 # Status hook: a forge-agnostic shell command, run per worktree, whose
-# trimmed stdout becomes the worktree's "status". Templated with
-# {{.Branch}} and {{.Path}}. Non-zero exit, empty output, or timeout
-# (~10s) all map to "unknown". When configured, sarj list shows a
-# STATUS column and JSON output, and sarj delete --state filters by
-# the returned token.
+# trimmed stdout becomes the worktree's "status". The branch name and
+# worktree path are exposed as $BRANCH and $SARJ_WT_PATH. Non-zero exit,
+# empty output, or timeout (default 10s) all map to "unknown". When
+# configured, sarj list shows a STATUS column and JSON output, and
+# sarj delete --state filters by the returned token (case-insensitive).
+# 'gh pr list --state all' is preferred over 'gh pr view' so CLOSED PRs
+# are also detected; '.[0].state // "none"' yields a stable "none"
+# token when the branch has no PR.
 # [status]
-# command = "gh pr view {{.Branch}} --json state -q .state 2>/dev/null"
+# command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
+# timeout = "10s"
 `
 
 const localConfigTemplate = `# sarj local configuration (per-user, per-project)
@@ -123,7 +127,7 @@ const localConfigTemplate = `# sarj local configuration (per-user, per-project)
 # Override the project status hook (e.g., to use a different forge or
 # add private filtering). See .sarj.toml for the full description.
 # [status]
-# command = "gh pr view {{.Branch}} --json state -q .state 2>/dev/null"
+# command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
 `
 
 func newInitCmd(r exec.Runner) *cobra.Command {
@@ -174,7 +178,7 @@ func initGlobal(cmd *cobra.Command) error {
 }
 
 func initLocal(cmd *cobra.Command, r exec.Runner) error {
-	repoRoot, err := git.RepoRoot(r)
+	repoRoot, err := git.RepoRoot(cmd.Context(), r)
 	if err != nil {
 		return err
 	}
@@ -194,7 +198,7 @@ func initLocal(cmd *cobra.Command, r exec.Runner) error {
 }
 
 func initProject(cmd *cobra.Command, r exec.Runner) error {
-	repoRoot, err := git.RepoRoot(r)
+	repoRoot, err := git.RepoRoot(cmd.Context(), r)
 	if err != nil {
 		return err
 	}

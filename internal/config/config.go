@@ -44,11 +44,15 @@ type TmuxConfig struct {
 }
 
 // StatusConfig configures the optional per-worktree status hook.
-// Command is a shell snippet templated with {{.Branch}} and {{.Path}};
-// its trimmed stdout becomes the worktree's status. Non-zero exit, empty
-// output, or timeout map to "unknown".
+// Command is a shell snippet that reads $BRANCH and $SARJ_WT_PATH from the
+// environment; its trimmed stdout becomes the worktree's status. Non-zero
+// exit, empty output, or timeout map to "unknown".
+//
+// Timeout bounds each invocation. Empty string falls back to status.DefaultTimeout
+// (10s); the value is parsed by time.ParseDuration ("5s", "500ms", "1m").
 type StatusConfig struct {
 	Command string `toml:"command"`
+	Timeout string `toml:"timeout"`
 }
 
 // WindowConfig describes a single tmux window to create.
@@ -201,6 +205,9 @@ func merge(global, project *Config) {
 	if project.Status.Command != "" {
 		global.Status.Command = project.Status.Command
 	}
+	if project.Status.Timeout != "" {
+		global.Status.Timeout = project.Status.Timeout
+	}
 }
 
 // mergeLocal overlays local (per-user, per-project) fields onto the merged config.
@@ -226,6 +233,9 @@ func mergeLocal(base, local *Config) {
 	}
 	if local.Status.Command != "" {
 		base.Status.Command = local.Status.Command
+	}
+	if local.Status.Timeout != "" {
+		base.Status.Timeout = local.Status.Timeout
 	}
 }
 

@@ -24,7 +24,7 @@ type response struct {
 }
 
 // Matching tries the full command, then progressively shorter prefixes.
-func (f *fakeRunner) Run(name string, args ...string) (string, error) {
+func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	call := name + " " + strings.Join(args, " ")
 	f.mu.Lock()
 	f.calls = append(f.calls, call)
@@ -40,11 +40,30 @@ func (f *fakeRunner) Run(name string, args ...string) (string, error) {
 	return "", nil
 }
 
-func (f *fakeRunner) RunContext(_ context.Context, name string, args ...string) (string, error) {
-	return f.Run(name, args...)
+// RunWithEnv folds env vars into the call key so tests can differentiate
+// invocations that share command text but vary by env. The recorded call
+// contains the env suffix; lookup tries the env-suffixed key first, then
+// progressively shorter prefixes — falling through to the plain command.
+func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, args ...string) (string, error) {
+	call := name + " " + strings.Join(args, " ")
+	if len(env) > 0 {
+		call += " " + strings.Join(env, " ")
+	}
+	f.mu.Lock()
+	f.calls = append(f.calls, call)
+	f.mu.Unlock()
+
+	parts := strings.Fields(call)
+	for i := len(parts); i > 0; i-- {
+		key := strings.Join(parts[:i], " ")
+		if resp, ok := f.responses[key]; ok {
+			return resp.out, resp.err
+		}
+	}
+	return "", nil
 }
 
-func (f *fakeRunner) RunInteractive(name string, args ...string) error {
+func (f *fakeRunner) RunInteractive(_ context.Context, name string, args ...string) error {
 	f.mu.Lock()
 	f.calls = append(f.calls, name+" "+strings.Join(args, " "))
 	f.mu.Unlock()
