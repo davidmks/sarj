@@ -286,6 +286,7 @@ Create a worktree with optional tmux session.
 | `--no-symlinks` | Skip symlinking |
 | `--no-tmux` | Skip tmux session |
 | `--no-attach` | Create session but don't attach |
+| `--reuse-existing` | If the worktree already exists, reuse it and (re)build its tmux session instead of failing |
 
 ### `sarj delete [name...] [flags]`
 
