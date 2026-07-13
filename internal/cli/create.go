@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 	var opts worktree.CreateOpts
 	var skipTmux bool
 	var skipAttach bool
+	var reuseExisting bool
 	var cmdArgs string
 
 	cmd := &cobra.Command{
@@ -48,11 +50,20 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 			}
 
 			wt, err := worktree.Create(ctx, r, cfg, opts)
-			if err != nil {
+			switch {
+			case err == nil:
+				fmt.Fprintf(cmd.OutOrStdout(), "Created worktree %s\n", wt.Branch) //nolint:errcheck
+			case reuseExisting && errors.Is(err, worktree.ErrWorktreeExists):
+				// Worktree is already on disk: don't recreate it, just (re)build the
+				// tmux session from config below. The path is deterministic.
+				wt = &worktree.Worktree{
+					Path:   filepath.Join(cfg.WorktreeBase, worktree.DirName(opts.Name)),
+					Branch: opts.Name,
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Reusing existing worktree %s\n", wt.Branch) //nolint:errcheck
+			default:
 				return err
 			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "Created worktree %s\n", wt.Branch) //nolint:errcheck
 
 			if !skipTmux && cfg.Tmux.Enabled {
 				// Clear the {{.SetupCommand}} placeholder when the user
@@ -76,6 +87,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.SkipSymlinks, "no-symlinks", false, "skip symlinking")
 	cmd.Flags().BoolVar(&skipTmux, "no-tmux", false, "skip tmux session creation")
 	cmd.Flags().BoolVar(&skipAttach, "no-attach", false, "create tmux session but don't attach")
+	cmd.Flags().BoolVar(&reuseExisting, "reuse-existing", false, "if the worktree already exists, reuse it and (re)build its tmux session instead of failing")
 	cmd.Flags().StringVar(&cmdArgs, "args", "", "arguments to pass to commands containing {{.Args}}")
 
 	return cmd

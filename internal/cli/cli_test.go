@@ -606,6 +606,74 @@ command = "{{.SetupCommand}}"
 	assert.True(t, r.hasCall("send-keys -t my-feature:dev clear && make setup Enter"), "without --no-setup, placeholder should resolve to setup_command")
 }
 
+func TestCreateCmd_ExistingWorktreeErrorsWithoutFlag(t *testing.T) {
+	isolateConfig(t)
+	dir := newRepoDir(t)
+	// Pre-create the worktree dir so worktree.Create reports it already exists.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "wt", "my-feature"), 0o750))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"create", "my-feature", "--no-tmux"})
+
+	err := cmd.Execute()
+	assert.ErrorContains(t, err, "worktree already exists")
+	assert.False(t, r.hasCall("git worktree add"), "should not add a worktree that already exists")
+}
+
+func TestCreateCmd_ReuseExistingSkipsWorktreeAdd(t *testing.T) {
+	isolateConfig(t)
+	dir := newRepoDir(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "wt", "my-feature"), 0o750))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"create", "my-feature", "--no-tmux", "--reuse-existing"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, buf.String(), "Reusing existing worktree my-feature")
+	assert.False(t, r.hasCall("git worktree add"), "existing worktree should be reused, not recreated")
+}
+
+// The point of --reuse-existing: an existing worktree whose tmux session is
+// gone still gets its configured session layout rebuilt, not skipped.
+func TestCreateCmd_ReuseExistingBuildsTmuxSession(t *testing.T) {
+	isolateConfig(t)
+	dir := newRepoDir(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".sarj.toml"), []byte(`
+default_branch = "main"
+
+[[tmux.windows]]
+name = "dev"
+command = "echo hi"
+`), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "wt", "my-feature"), 0o750))
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"tmux":                          {},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"create", "my-feature", "--reuse-existing", "--no-attach"})
+
+	require.NoError(t, cmd.Execute())
+	assert.True(t, r.hasCall("new-session -d -s my-feature"), "reusing a worktree should still build the configured tmux session")
+}
+
 func TestDeleteCmd_KeepBranch(t *testing.T) {
 	isolateConfig(t)
 	saveCwd(t)
