@@ -1020,7 +1020,26 @@ func TestDeleteCmd_InferFromCwd_MainWorktree(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "--keep-branch"})
 
 	err = cmd.Execute()
-	assert.ErrorContains(t, err, "cannot delete the main worktree")
+	assert.ErrorContains(t, err, "cannot use the main worktree")
+}
+
+func TestDeleteCmd_NamedMainWorktree(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir, err := filepath.EvalSymlinks(newRepoDir(t))
+	require.NoError(t, err)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"delete", filepath.Base(dir), "--keep-branch"})
+
+	err = cmd.Execute()
+	assert.ErrorContains(t, err, "cannot use the main worktree")
+	assert.False(t, r.hasCall("worktree remove"))
 }
 
 func TestDeleteCmd_InferFromCwd_NotInWorktree(t *testing.T) {
