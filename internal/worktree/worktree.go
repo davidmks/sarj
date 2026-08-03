@@ -139,6 +139,50 @@ func Delete(ctx context.Context, r exec.Runner, opts DeleteOpts) error {
 	return nil
 }
 
+// RenameOpts holds options for renaming a worktree.
+type RenameOpts struct {
+	OldBranch string
+	NewBranch string
+	OldPath   string
+	NewPath   string
+	Progress  io.Writer
+}
+
+// Rename renames the branch and moves the worktree directory. The move is
+// skipped when NewPath is empty or already equal to OldPath, which renames the
+// branch alone.
+//
+// A failed move rolls the branch name back, so the worktree is left as it was
+// found. The caller must not be inside the worktree being moved: git resolves
+// the move against the process working directory.
+//
+// The tmux session is not touched; that is handled by the CLI layer, as with
+// Delete and branch deletion.
+func Rename(ctx context.Context, r exec.Runner, opts RenameOpts) error {
+	w := progressWriter(opts.Progress)
+
+	if _, err := r.Run(ctx, "git", "branch", "-m", opts.OldBranch, opts.NewBranch); err != nil {
+		return fmt.Errorf("renaming branch %s: %w", opts.OldBranch, err)
+	}
+
+	success := false
+	defer func() {
+		if !success {
+			r.Run(ctx, "git", "branch", "-m", opts.NewBranch, opts.OldBranch) //nolint:errcheck
+		}
+	}()
+
+	if opts.NewPath != "" && opts.NewPath != opts.OldPath {
+		progress(w, "Moving worktree to %s\n", opts.NewPath)
+		if _, err := r.Run(ctx, "git", "worktree", "move", opts.OldPath, opts.NewPath); err != nil {
+			return fmt.Errorf("moving worktree to %s: %w", opts.NewPath, err)
+		}
+	}
+
+	success = true
+	return nil
+}
+
 func progressWriter(w io.Writer) io.Writer {
 	if w == nil {
 		return io.Discard

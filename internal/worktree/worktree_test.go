@@ -363,6 +363,86 @@ func TestDelete_StaleEntry(t *testing.T) {
 	assert.True(t, r.hasCall("worktree prune"))
 }
 
+func TestRename(t *testing.T) {
+	base := t.TempDir()
+	r := &fakeRunner{responses: map[string]response{"git": {}}}
+
+	err := worktree.Rename(t.Context(), r, worktree.RenameOpts{
+		OldBranch: "my-feature",
+		NewBranch: "feat/new",
+		OldPath:   filepath.Join(base, "my-feature"),
+		NewPath:   filepath.Join(base, "feat-new"),
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"git branch -m my-feature feat/new",
+		"git worktree move " + filepath.Join(base, "my-feature") + " " + filepath.Join(base, "feat-new"),
+	}, r.calls, "branch must be renamed before the directory moves")
+}
+
+func TestRename_KeepsPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		oldPath string
+		newPath string
+	}{
+		{name: "no destination", oldPath: "/wt/my-feature", newPath: ""},
+		{name: "destination unchanged", oldPath: "/wt/feat-foo", newPath: "/wt/feat-foo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &fakeRunner{responses: map[string]response{"git": {}}}
+
+			err := worktree.Rename(t.Context(), r, worktree.RenameOpts{
+				OldBranch: "my-feature",
+				NewBranch: "feat/new",
+				OldPath:   tt.oldPath,
+				NewPath:   tt.newPath,
+			})
+
+			require.NoError(t, err)
+			assert.True(t, r.hasCall("branch -m my-feature feat/new"))
+			assert.False(t, r.hasCall("worktree move"))
+		})
+	}
+}
+
+func TestRename_BranchFails(t *testing.T) {
+	r := &fakeRunner{responses: map[string]response{
+		"git branch -m": {err: fmt.Errorf("branch exists")},
+	}}
+
+	err := worktree.Rename(t.Context(), r, worktree.RenameOpts{
+		OldBranch: "my-feature",
+		NewBranch: "feat/new",
+		OldPath:   "/wt/my-feature",
+		NewPath:   "/wt/feat-new",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "renaming branch my-feature")
+	assert.False(t, r.hasCall("worktree move"))
+}
+
+func TestRename_MoveFailureRollsBackBranch(t *testing.T) {
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree move": {err: fmt.Errorf("destination busy")},
+	}}
+
+	err := worktree.Rename(t.Context(), r, worktree.RenameOpts{
+		OldBranch: "my-feature",
+		NewBranch: "feat/new",
+		OldPath:   "/wt/my-feature",
+		NewPath:   "/wt/feat-new",
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "moving worktree")
+	assert.True(t, r.hasCall("branch -m feat/new my-feature"), "branch rename should be undone")
+}
+
 func TestList_Error(t *testing.T) {
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree list --porcelain": {err: fmt.Errorf("not a git repo")},

@@ -198,6 +198,18 @@ func KillSession(ctx context.Context, r exec.Runner, name string) error {
 	return nil
 }
 
+// RenameSession renames a tmux session. Returns nil if the session doesn't exist.
+func RenameSession(ctx context.Context, r exec.Runner, oldName, newName string) error {
+	oldName, newName = SanitizeName(oldName), SanitizeName(newName)
+	if !SessionExists(ctx, r, oldName) {
+		return nil
+	}
+	if _, err := r.Run(ctx, "tmux", "rename-session", "-t", oldName, newName); err != nil {
+		return fmt.Errorf("renaming tmux session %s: %w", oldName, err)
+	}
+	return nil
+}
+
 // CurrentSessionName returns the name of the tmux session that the current
 // process is running in. Returns "" if not inside tmux or on error.
 func CurrentSessionName(ctx context.Context, r exec.Runner) string {

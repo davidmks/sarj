@@ -43,6 +43,9 @@ sarj create feat/v2 -b feat/v1
 # List worktrees and their tmux session status
 sarj list
 
+# Rename branch, directory, and tmux session together
+sarj rename feat/my-feature feat/better-name
+
 # Delete a worktree (kills tmux session, removes worktree)
 sarj delete feat/my-feature
 
@@ -58,6 +61,11 @@ sarj delete feat/my-feature -D
 - Symlink shared files (`.env`, secrets, etc.)
 - Run setup command — rolls back everything on failure
 - Open tmux session with configured windows/panes
+
+**`sarj rename`**
+- Rename the branch
+- Move the worktree directory alongside it — rolls the branch name back on failure
+- Rename the tmux session
 
 **`sarj delete`**
 - Kill tmux session
@@ -298,6 +306,19 @@ Remove one or more worktrees and kill their tmux sessions. With no name, deletes
 | `--keep-branch` | Keep the branch (no prompt) |
 | `-y, --yes` | Skip prompts (defaults to keep-branch) |
 | `--state <list>` | Filter by status hook output; repeat or comma-separate (e.g. `--state=merged,closed`) |
+
+### `sarj rename [name] <new-branch> [flags]`
+
+Rename a worktree's branch, directory, and tmux session in one step. With no name, renames the worktree at the current directory.
+
+The directory moves to a sibling of where it is now, so a worktree kept outside `worktree_base` stays put. Uncommitted changes survive the move, and your shell and tmux panes follow the directory.
+
+| Flag | Description |
+|------|-------------|
+| `--keep-path` | Keep the worktree directory where it is |
+| `--no-tmux` | Skip renaming the tmux session |
+
+Git does not rename the remote branch, so a branch that already tracks one keeps tracking it under the old name. sarj warns when that happens.
 
 ### `sarj list [-o text|json]`
 

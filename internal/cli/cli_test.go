@@ -11,6 +11,7 @@ import (
 
 	"github.com/davidmks/sarj/internal/cli"
 	"github.com/davidmks/sarj/internal/tmux"
+	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1020,7 +1021,26 @@ func TestDeleteCmd_InferFromCwd_MainWorktree(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "--keep-branch"})
 
 	err = cmd.Execute()
-	assert.ErrorContains(t, err, "cannot delete the main worktree")
+	assert.ErrorContains(t, err, "cannot use the main worktree")
+}
+
+func TestDeleteCmd_NamedMainWorktree(t *testing.T) {
+	isolateConfig(t)
+	saveCwd(t)
+	dir, err := filepath.EvalSymlinks(newRepoDir(t))
+	require.NoError(t, err)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n"
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+	}}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{"delete", filepath.Base(dir), "--keep-branch"})
+
+	err = cmd.Execute()
+	assert.ErrorContains(t, err, "cannot use the main worktree")
+	assert.False(t, r.hasCall("worktree remove"))
 }
 
 func TestDeleteCmd_InferFromCwd_NotInWorktree(t *testing.T) {
@@ -1381,4 +1401,194 @@ func TestDeleteCmd_StateWithNamedArgs(t *testing.T) {
 	assert.True(t, r.hasCall("worktree remove --force "+wtA))
 	assert.False(t, r.hasCall("worktree remove --force "+wtB), "b is open, filtered out")
 	assert.False(t, r.hasCall("worktree remove --force "+wtC), "c not in named args")
+}
+
+// renameFixture builds a repo holding one worktree on branch feat/old, in a
+// directory named feat-old, plus a runner primed for a rename that should
+// succeed: the destination branch does not exist, there is no tmux session,
+// and the branch has no upstream.
+func renameFixture(t *testing.T) (dir, wtPath string, r *fakeRunner) {
+	t.Helper()
+	isolateConfig(t)
+	saveCwd(t)
+
+	dir, err := filepath.EvalSymlinks(newRepoDir(t))
+	require.NoError(t, err)
+	// The worktree lives outside the main repo, as real ones do: FindByPath
+	// returns the first worktree containing the path, and the main worktree is
+	// listed first.
+	wtBase, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	wtPath = filepath.Join(wtBase, "feat-old")
+	fakeWorktreeDir(t, wtPath)
+
+	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/feat/old\n\n"
+	r = &fakeRunner{responses: map[string]response{
+		"git worktree list --porcelain": {out: porcelain},
+		"git show-ref":                  {err: fmt.Errorf("no such branch")},
+		"tmux has-session":              {err: fmt.Errorf("no session")},
+		"git worktree":                  {},
+		"git branch":                    {},
+	}}
+	return dir, wtPath, r
+}
+
+// runRename executes the rename command and returns stdout and stderr.
+func runRename(t *testing.T, r *fakeRunner, args ...string) (out, errOut *bytes.Buffer, err error) {
+	t.Helper()
+	out, errOut = new(bytes.Buffer), new(bytes.Buffer)
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
+	cmd.SetArgs(append([]string{"rename"}, args...))
+	return out, errOut, cmd.Execute()
+}
+
+func TestRenameCmd_ByName(t *testing.T) {
+	_, wtPath, r := renameFixture(t)
+
+	out, _, err := runRename(t, r, "feat-old", "feat/new")
+
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "Renamed worktree feat-old to feat/new")
+	assert.True(t, r.hasCall("branch -m feat/old feat/new"))
+	assert.True(t, r.hasCall("worktree move "+wtPath+" "+filepath.Join(filepath.Dir(wtPath), "feat-new")))
+}
+
+func TestRenameCmd_InferFromCwd(t *testing.T) {
+	_, wtPath, r := renameFixture(t)
+	require.NoError(t, os.Chdir(wtPath))
+
+	out, _, err := runRename(t, r, "feat/new")
+
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "Renamed worktree feat-old to feat/new")
+	assert.True(t, r.hasCall("branch -m feat/old feat/new"))
+	assert.True(t, r.hasCall("worktree move "+wtPath+" "+filepath.Join(filepath.Dir(wtPath), "feat-new")))
+}
+
+func TestRenameCmd_NotFound(t *testing.T) {
+	_, _, r := renameFixture(t)
+
+	_, _, err := runRename(t, r, "nope", "feat/new")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "worktree not found: nope")
+	assert.False(t, r.hasCall("branch -m"))
+}
+
+func TestRenameCmd_MainWorktree(t *testing.T) {
+	dir, _, r := renameFixture(t)
+
+	_, _, err := runRename(t, r, filepath.Base(dir), "feat/new")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot use the main worktree")
+	assert.False(t, r.hasCall("branch -m"))
+}
+
+func TestRenameCmd_BranchAlreadyExists(t *testing.T) {
+	_, _, r := renameFixture(t)
+	r.responses["git show-ref --verify --quiet refs/heads/feat/new"] = response{}
+
+	_, _, err := runRename(t, r, "feat-old", "feat/new")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "branch already exists: feat/new")
+	assert.False(t, r.hasCall("branch -m"))
+}
+
+func TestRenameCmd_SameBranch(t *testing.T) {
+	_, _, r := renameFixture(t)
+
+	_, _, err := runRename(t, r, "feat-old", "feat/old")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "branch is already named feat/old")
+	assert.False(t, r.hasCall("branch -m"))
+}
+
+func TestRenameCmd_DestinationExists(t *testing.T) {
+	_, wtPath, r := renameFixture(t)
+	fakeWorktreeDir(t, filepath.Join(filepath.Dir(wtPath), "feat-new"))
+
+	_, _, err := runRename(t, r, "feat-old", "feat/new")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, worktree.ErrWorktreeExists)
+	assert.False(t, r.hasCall("branch -m"))
+}
+
+func TestRenameCmd_KeepPath(t *testing.T) {
+	_, _, r := renameFixture(t)
+
+	_, _, err := runRename(t, r, "feat-old", "feat/new", "--keep-path")
+
+	require.NoError(t, err)
+	assert.True(t, r.hasCall("branch -m feat/old feat/new"))
+	assert.False(t, r.hasCall("worktree move"))
+}
+
+// Renaming feat/old to feat-old maps onto the directory name already in use,
+// so only the branch changes.
+func TestRenameCmd_DestinationUnchanged(t *testing.T) {
+	_, _, r := renameFixture(t)
+
+	_, _, err := runRename(t, r, "feat-old", "feat-old")
+
+	require.NoError(t, err)
+	assert.True(t, r.hasCall("branch -m feat/old feat-old"))
+	assert.False(t, r.hasCall("worktree move"))
+}
+
+func TestRenameCmd_RenamesSession(t *testing.T) {
+	_, _, r := renameFixture(t)
+	r.responses["tmux has-session"] = response{}
+
+	_, _, err := runRename(t, r, "feat-old", "feat/new")
+
+	require.NoError(t, err)
+	assert.True(t, r.hasCall("rename-session -t feat-old feat-new"))
+}
+
+func TestRenameCmd_NoTmux(t *testing.T) {
+	_, _, r := renameFixture(t)
+	r.responses["tmux has-session"] = response{}
+
+	_, _, err := runRename(t, r, "feat-old", "feat/new", "--no-tmux")
+
+	require.NoError(t, err)
+	assert.True(t, r.hasCall("branch -m feat/old feat/new"))
+	assert.False(t, r.hasCall("rename-session"))
+}
+
+func TestRenameCmd_WarnsWhenSessionRenameFails(t *testing.T) {
+	_, _, r := renameFixture(t)
+	r.responses["tmux has-session"] = response{}
+	r.responses["tmux rename-session"] = response{err: fmt.Errorf("duplicate session")}
+
+	_, errOut, err := runRename(t, r, "feat-old", "feat/new")
+
+	require.NoError(t, err, "a tmux failure must not fail the rename")
+	assert.Contains(t, errOut.String(), "warning: could not rename tmux session")
+}
+
+func TestRenameCmd_WarnsAboutUpstream(t *testing.T) {
+	_, wtPath, r := renameFixture(t)
+	r.responses["git -C "+wtPath+" rev-parse"] = response{out: "origin/feat-old\n"}
+
+	_, errOut, err := runRename(t, r, "feat-old", "feat/new")
+
+	require.NoError(t, err)
+	assert.Contains(t, errOut.String(), "warning: branch still tracks origin/feat-old")
+}
+
+func TestRenameCmd_NoUpstreamWarningWhenUntracked(t *testing.T) {
+	_, _, r := renameFixture(t)
+
+	_, errOut, err := runRename(t, r, "feat-old", "feat/new")
+
+	require.NoError(t, err)
+	assert.NotContains(t, errOut.String(), "still tracks")
 }

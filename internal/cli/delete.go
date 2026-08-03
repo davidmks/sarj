@@ -50,7 +50,7 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 			}
 
 			// cwd-inferred deletes (zero-arg) prompt for confirmation unless -y.
-			if len(targets) == 1 && targets[0].confirm && !yes {
+			if len(targets) == 1 && targets[0].inferred && !yes {
 				if !promptYesNo(fmt.Sprintf("Delete worktree '%s'?", targets[0].name), in) {
 					return nil
 				}
@@ -90,12 +90,6 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 	return cmd
 }
 
-type deleteTarget struct {
-	wt      *worktree.Worktree
-	name    string
-	confirm bool
-}
-
 type deleteOpts struct {
 	deleteBranch bool
 	keepBranch   bool
@@ -106,7 +100,7 @@ type deleteOpts struct {
 // --state filter when set. Without --state it falls through to the existing
 // arg-or-cwd behavior. With --state and no args, the candidate pool is all
 // non-main worktrees rather than the cwd.
-func resolveDeleteTargets(ctx context.Context, r exec.Runner, wts []worktree.Worktree, args, state []string) ([]deleteTarget, error) {
+func resolveDeleteTargets(ctx context.Context, r exec.Runner, wts []worktree.Worktree, args, state []string) ([]target, error) {
 	wanted := stateSet(state)
 	if len(wanted) == 0 {
 		return resolveTargets(wts, args)
@@ -138,7 +132,7 @@ func resolveDeleteTargets(ctx context.Context, r exec.Runner, wts []worktree.Wor
 	}
 	results := status.ProbeAll(ctx, r, cfg.Status.Command, items, timeout)
 
-	var filtered []deleteTarget
+	var filtered []target
 	for i, t := range pool {
 		if wanted[strings.ToLower(results[i].State)] {
 			filtered = append(filtered, t)
@@ -175,18 +169,18 @@ func warnNoStateMatch(wanted []string, results []status.Result) {
 // candidatePool returns the worktrees the --state filter applies to: the
 // named ones (with strict unknown-name failure) when args are given, or all
 // non-main worktrees when args are empty.
-func candidatePool(wts []worktree.Worktree, args []string) ([]deleteTarget, error) {
+func candidatePool(wts []worktree.Worktree, args []string) ([]target, error) {
 	if len(args) > 0 {
 		return resolveNamed(wts, args)
 	}
 	mainPath := worktree.MainPath(wts)
-	var pool []deleteTarget
+	var pool []target
 	for i := range wts {
 		wt := &wts[i]
 		if wt.Path == mainPath {
 			continue
 		}
-		pool = append(pool, deleteTarget{wt: wt, name: filepath.Base(wt.Path)})
+		pool = append(pool, target{wt: wt, name: filepath.Base(wt.Path)})
 	}
 	return pool, nil
 }
@@ -221,64 +215,15 @@ func loadDeleteConfig(ctx context.Context, r exec.Runner) (*config.Config, error
 	return config.Load(mainPath, filepath.Base(mainPath))
 }
 
-// resolveTargets resolves all delete targets up front so unknown names fail
-// before any side effect. Zero args falls back to cwd inference.
-func resolveTargets(wts []worktree.Worktree, args []string) ([]deleteTarget, error) {
-	if len(args) == 0 {
-		t, err := resolveFromCwd(wts)
-		if err != nil {
-			return nil, err
-		}
-		return []deleteTarget{t}, nil
-	}
-	return resolveNamed(wts, args)
-}
-
-func resolveNamed(wts []worktree.Worktree, args []string) ([]deleteTarget, error) {
-	targets := make([]deleteTarget, 0, len(args))
-	var unknown []string
-	for _, name := range args {
-		wt := worktree.FindByName(wts, name)
-		if wt == nil {
-			unknown = append(unknown, name)
-			continue
-		}
-		targets = append(targets, deleteTarget{wt: wt, name: name})
-	}
-	if len(unknown) > 0 {
-		return nil, fmt.Errorf("worktree not found: %s", strings.Join(unknown, ", "))
-	}
-	return targets, nil
-}
-
-func resolveFromCwd(wts []worktree.Worktree) (deleteTarget, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return deleteTarget{}, fmt.Errorf("getting current directory: %w", err)
-	}
-	cwd, err = filepath.EvalSymlinks(cwd)
-	if err != nil {
-		return deleteTarget{}, fmt.Errorf("resolving current directory: %w", err)
-	}
-	wt := worktree.FindByPath(wts, cwd)
-	if wt == nil {
-		return deleteTarget{}, fmt.Errorf("current directory is not inside a worktree")
-	}
-	if wt.Path == worktree.MainPath(wts) {
-		return deleteTarget{}, fmt.Errorf("cannot delete the main worktree")
-	}
-	return deleteTarget{wt: wt, name: filepath.Base(wt.Path), confirm: true}, nil
-}
-
 // deferCurrentSession moves any target matching the current tmux session to the
 // end of the queue so prior deletes complete before the SIGHUP-on-current-kill.
-func deferCurrentSession(ctx context.Context, r exec.Runner, targets []deleteTarget) []deleteTarget {
+func deferCurrentSession(ctx context.Context, r exec.Runner, targets []target) []target {
 	if !tmux.IsInsideSession() {
 		return targets
 	}
 	current := tmux.CurrentSessionName(ctx, r)
-	head := make([]deleteTarget, 0, len(targets))
-	var tail []deleteTarget
+	head := make([]target, 0, len(targets))
+	var tail []target
 	for _, t := range targets {
 		if tmux.SanitizeName(t.name) == current {
 			tail = append(tail, t)
@@ -289,7 +234,7 @@ func deferCurrentSession(ctx context.Context, r exec.Runner, targets []deleteTar
 	return append(head, tail...)
 }
 
-func deleteOne(ctx context.Context, cmd *cobra.Command, r exec.Runner, t deleteTarget, opts deleteOpts, in *bufio.Reader) error {
+func deleteOne(ctx context.Context, cmd *cobra.Command, r exec.Runner, t target, opts deleteOpts, in *bufio.Reader) error {
 	fmt.Fprintf(os.Stderr, "Removing worktree %s...\n", t.name) //nolint:errcheck
 	if err := worktree.Delete(ctx, r, worktree.DeleteOpts{
 		Path:     t.wt.Path,
