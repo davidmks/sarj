@@ -20,6 +20,7 @@ func NewRootCmd(version string, r exec.Runner) *cobra.Command {
 	root.AddCommand(
 		newCreateCmd(r),
 		newDeleteCmd(r),
+		newRenameCmd(r),
 		newListCmd(r),
 		newInitCmd(r),
 	)
