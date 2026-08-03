@@ -98,6 +98,55 @@ func TestIntegration_CreateWithSymlinks(t *testing.T) {
 	require.NoError(t, worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wt.Path}))
 }
 
+func TestIntegration_Rename(t *testing.T) {
+	_, r := initTestRepo(t)
+	wtBase := t.TempDir()
+
+	cfg := &config.Config{
+		WorktreeBase:  wtBase,
+		DefaultBranch: "main",
+	}
+
+	wt, err := worktree.Create(t.Context(), r, cfg, worktree.CreateOpts{
+		Name:      "feat/old",
+		SkipSetup: true,
+	})
+	require.NoError(t, err)
+
+	// Uncommitted work must survive the move — that is the whole point of
+	// renaming after planning rather than before.
+	scratch := filepath.Join(wt.Path, "scratch.txt")
+	require.NoError(t, os.WriteFile(scratch, []byte("work in progress"), 0o600))
+
+	newPath := filepath.Join(wtBase, "feat-new")
+	require.NoError(t, worktree.Rename(t.Context(), r, worktree.RenameOpts{
+		OldBranch: "feat/old",
+		NewBranch: "feat/new",
+		OldPath:   wt.Path,
+		NewPath:   newPath,
+	}))
+
+	assert.NoDirExists(t, wt.Path)
+	assert.DirExists(t, newPath)
+
+	moved, err := os.ReadFile(filepath.Join(newPath, "scratch.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "work in progress", string(moved))
+
+	branches, err := r.Run(t.Context(), "git", "branch", "--list", "--format=%(refname:short)")
+	require.NoError(t, err)
+	assert.Contains(t, branches, "feat/new")
+	assert.NotContains(t, branches, "feat/old")
+
+	wts, err := worktree.List(t.Context(), r)
+	require.NoError(t, err)
+	found := worktree.FindByName(wts, "feat/new")
+	require.NotNil(t, found, "renamed worktree should still resolve by name")
+	assert.Equal(t, "feat/new", found.Branch)
+
+	require.NoError(t, worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: newPath}))
+}
+
 func TestIntegration_CreateExistingBranch(t *testing.T) {
 	_, r := initTestRepo(t)
 	wtBase := t.TempDir()
