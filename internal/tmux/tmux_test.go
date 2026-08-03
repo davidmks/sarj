@@ -263,6 +263,49 @@ func TestKillSession(t *testing.T) {
 	})
 }
 
+func TestRenameSession(t *testing.T) {
+	t.Run("exists", func(t *testing.T) {
+		r := &fakeRunner{responses: map[string]response{
+			"tmux has-session -t my-session": {},
+		}}
+
+		err := tmux.RenameSession(t.Context(), r, "my-session", "renamed")
+		require.NoError(t, err)
+		assert.True(t, r.hasCall("rename-session -t my-session renamed"))
+	})
+
+	t.Run("does not exist", func(t *testing.T) {
+		r := &fakeRunner{responses: map[string]response{
+			"tmux has-session -t my-session": {err: fmt.Errorf("no session")},
+		}}
+
+		err := tmux.RenameSession(t.Context(), r, "my-session", "renamed")
+		require.NoError(t, err)
+		assert.False(t, r.hasCall("rename-session"))
+	})
+
+	t.Run("sanitizes both names", func(t *testing.T) {
+		r := &fakeRunner{responses: map[string]response{
+			"tmux has-session -t feat-v2": {},
+		}}
+
+		err := tmux.RenameSession(t.Context(), r, "feat.v2", "feat/v3")
+		require.NoError(t, err)
+		assert.True(t, r.hasCall("rename-session -t feat-v2 feat-v3"))
+	})
+
+	t.Run("rename fails", func(t *testing.T) {
+		r := &fakeRunner{responses: map[string]response{
+			"tmux has-session -t my-session":            {},
+			"tmux rename-session -t my-session renamed": {err: fmt.Errorf("duplicate session")},
+		}}
+
+		err := tmux.RenameSession(t.Context(), r, "my-session", "renamed")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "renaming tmux session my-session")
+	})
+}
+
 func TestConnect(t *testing.T) {
 	t.Run("outside tmux attaches", func(t *testing.T) {
 		t.Setenv("TMUX", "")
