@@ -93,6 +93,20 @@ func TestParsePorcelain(t *testing.T) {
 			},
 		},
 		{
+			name:  "locked worktree",
+			input: "worktree /home/user/wt/feature\nHEAD def456\nbranch refs/heads/feature\nlocked\n\n",
+			want: []Worktree{
+				{Path: "/home/user/wt/feature", Branch: "feature", HEAD: "def456", Locked: true},
+			},
+		},
+		{
+			name:  "locked worktree with reason",
+			input: "worktree /home/user/wt/feature\nHEAD def456\nbranch refs/heads/feature\nlocked on usb drive\n\n",
+			want: []Worktree{
+				{Path: "/home/user/wt/feature", Branch: "feature", HEAD: "def456", Locked: true},
+			},
+		},
+		{
 			name:  "no trailing newline",
 			input: "worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main",
 			want: []Worktree{

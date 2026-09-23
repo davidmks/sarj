@@ -72,6 +72,8 @@ func parsePorcelain(output string) []Worktree {
 			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
 		case line == "bare":
 			current.Bare = true
+		case line == "locked" || strings.HasPrefix(line, "locked "):
+			current.Locked = true
 		case line == "":
 			if current.Path != "" {
 				worktrees = append(worktrees, current)

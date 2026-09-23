@@ -31,6 +31,7 @@ type Worktree struct {
 	Branch string
 	HEAD   string
 	Bare   bool
+	Locked bool
 }
 
 // CreateOpts holds options for creating a worktree.
