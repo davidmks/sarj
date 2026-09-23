@@ -38,7 +38,15 @@ homebrew_casks:
     homepage: https://github.com/davidmks/sarj
     description: Git worktree + tmux session manager
     license: MIT
-    hooks:
-      post:
-        install: |
-          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/sarj"]
+    # The binaries are not notarized, so macOS would refuse to run them while
+    # the download's quarantine flag is set. goreleaser's hooks still emit the
+    # deprecated Ruby postflight block, so the declarative stanza goes here.
+    # goreleaser runs this text as a Go template, so {{ "{{staged_path}}" }}
+    # prints Homebrew's own {{staged_path}} token, which Homebrew fills in at
+    # install time.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/sarj"]
+        end
+      end
