@@ -1610,6 +1610,19 @@ func TestPurgeTrashCmd(t *testing.T) {
 	assert.Empty(t, r.calls, "purge needs no git or tmux")
 }
 
+func TestPurgeTrashCmd_RefusesOtherFolders(t *testing.T) {
+	dir := t.TempDir()
+	keep := filepath.Join(dir, "keep")
+	require.NoError(t, os.MkdirAll(keep, 0o750))
+
+	cmd := cli.NewRootCmd("test", &fakeRunner{})
+	cmd.SetErr(new(bytes.Buffer))
+	cmd.SetArgs([]string{worktree.PurgeCommand, dir})
+
+	require.Error(t, cmd.Execute())
+	assert.DirExists(t, keep)
+}
+
 func TestPurgeTrashCmd_HiddenFromHelp(t *testing.T) {
 	cmd := cli.NewRootCmd("test", &fakeRunner{})
 	buf := new(bytes.Buffer)

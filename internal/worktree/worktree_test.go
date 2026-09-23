@@ -440,6 +440,31 @@ func TestPurgeTrash_MissingFolder(t *testing.T) {
 	assert.NoError(t, worktree.PurgeTrash(filepath.Join(t.TempDir(), ".sarj-trash")))
 }
 
+func TestPurgeTrash_RefusesOtherFolders(t *testing.T) {
+	tests := []struct {
+		name string
+		dir  string
+	}{
+		{name: "unrelated folder", dir: "projects"},
+		{name: "similar name", dir: ".sarj-trash-old"},
+		{name: "inside the trash", dir: ".sarj-trash/entry"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), tt.dir)
+			keep := filepath.Join(dir, "keep")
+			require.NoError(t, os.MkdirAll(keep, 0o750))
+
+			err := worktree.PurgeTrash(dir)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "refusing to purge")
+			assert.DirExists(t, keep)
+		})
+	}
+}
+
 // TestPurgeTrash_Concurrent runs several purges on the same trash at once,
 // as a bulk delete does. Each one must finish every entry even when another
 // purge deletes files under it.

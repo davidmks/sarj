@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -59,7 +60,13 @@ func startPurge(r exec.Runner, trash string) error {
 // that: it treats files that vanish mid-walk as deleted. rm does not. BSD rm
 // stops at the first vanished folder and silently skips its other
 // arguments, and uutils rm leaves files behind.
+//
+// It refuses any folder not named .sarj-trash, so a wrong argument to the
+// hidden command cannot empty an unrelated folder.
 func PurgeTrash(trash string) error {
+	if filepath.Base(filepath.Clean(trash)) != trashDirName {
+		return fmt.Errorf("refusing to purge %s: not a %s folder", trash, trashDirName)
+	}
 	entries, err := os.ReadDir(trash)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
