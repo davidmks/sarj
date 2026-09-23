@@ -162,7 +162,7 @@ func Delete(ctx context.Context, r exec.Runner, opts DeleteOpts) error {
 	}
 
 	if trash != "" {
-		if err := purgeTrash(r, trash); err != nil {
+		if err := startPurge(r, trash); err != nil {
 			progress(w, "warning: could not start background cleanup of %s: %v\n", trash, err)
 		}
 	}

@@ -15,9 +15,23 @@ import (
 	"github.com/davidmks/sarj/internal/cli"
 	"github.com/davidmks/sarj/internal/exec"
 	"github.com/davidmks/sarj/internal/tmux"
+	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestMain lets the test binary stand in for sarj. A real Delete starts
+// os.Executable() with the purge command in the background, and in tests that
+// is this binary. Without this, it would run the whole test suite again.
+func TestMain(m *testing.M) {
+	if len(os.Args) == 3 && os.Args[1] == worktree.PurgeCommand {
+		if err := worktree.PurgeTrash(os.Args[2]); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func requireTmux(t *testing.T) {
 	t.Helper()

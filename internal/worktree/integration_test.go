@@ -15,6 +15,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestMain lets the test binary stand in for sarj. A real Delete starts
+// os.Executable() with the purge command in the background, and in tests that
+// is this binary. Without this, it would run the whole test suite again.
+func TestMain(m *testing.M) {
+	if len(os.Args) == 3 && os.Args[1] == worktree.PurgeCommand {
+		if err := worktree.PurgeTrash(os.Args[2]); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
 // initTestRepo creates a real git repo with an initial commit.
 func initTestRepo(t *testing.T) (repoPath string, runner *exec.DefaultRunner) {
 	t.Helper()

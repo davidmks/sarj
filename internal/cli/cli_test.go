@@ -848,14 +848,14 @@ func TestDeleteCmd_CleanupBeforeKill(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 
-	purge := r.indexOfCall("rm -rf --")
+	purge := r.indexOfCall(worktree.PurgeCommand)
 	branchDelete := r.indexOfCall("branch -D")
 	sessionKill := r.indexOfCall("kill-session")
 
-	assert.Greater(t, purge, -1, "background rm should be started")
+	assert.Greater(t, purge, -1, "background purge should be started")
 	assert.Greater(t, branchDelete, -1, "branch -D should be called")
 	assert.Greater(t, sessionKill, -1, "kill-session should be called")
-	assert.Less(t, purge, sessionKill, "background rm must start before kill-session")
+	assert.Less(t, purge, sessionKill, "background purge must start before kill-session")
 	assert.Less(t, branchDelete, sessionKill, "branch delete must happen before kill-session")
 }
 
@@ -1041,7 +1041,7 @@ func TestDeleteCmd_NamedMainWorktree(t *testing.T) {
 	err = cmd.Execute()
 	assert.ErrorContains(t, err, "cannot use the main worktree")
 	assert.False(t, r.hasCall("worktree remove"))
-	assert.False(t, r.hasCall("rm -rf"))
+	assert.False(t, r.hasCall(worktree.PurgeCommand))
 }
 
 func TestDeleteCmd_InferFromCwd_NotInWorktree(t *testing.T) {
@@ -1593,4 +1593,29 @@ func TestRenameCmd_NoUpstreamWarningWhenUntracked(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NotContains(t, errOut.String(), "still tracks")
+}
+
+func TestPurgeTrashCmd(t *testing.T) {
+	trash := filepath.Join(t.TempDir(), ".sarj-trash")
+	require.NoError(t, os.MkdirAll(filepath.Join(trash, "old-123", "old"), 0o750))
+	r := &fakeRunner{}
+
+	cmd := cli.NewRootCmd("test", r)
+	cmd.SetArgs([]string{worktree.PurgeCommand, trash})
+
+	require.NoError(t, cmd.Execute())
+	entries, err := os.ReadDir(trash)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+	assert.Empty(t, r.calls, "purge needs no git or tmux")
+}
+
+func TestPurgeTrashCmd_HiddenFromHelp(t *testing.T) {
+	cmd := cli.NewRootCmd("test", &fakeRunner{})
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+
+	require.NoError(t, cmd.Execute())
+	assert.NotContains(t, buf.String(), worktree.PurgeCommand)
 }

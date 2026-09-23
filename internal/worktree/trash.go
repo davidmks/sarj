@@ -1,6 +1,8 @@
 package worktree
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -33,23 +35,43 @@ func moveToTrash(path string) (string, error) {
 	return trash, nil
 }
 
-// purgeTrash starts a background rm of every entry in the trash folder and
-// returns without waiting. Including older entries clears leftovers from an
-// earlier purge that was cut off, or files a process wrote after rm passed.
-//
-// The trash folder itself is kept: a delete running right after this one
-// renames into it, and removing it would race that rename.
-func purgeTrash(r exec.Runner, trash string) error {
-	entries, err := os.ReadDir(trash)
+// PurgeCommand is the hidden sarj subcommand that runs PurgeTrash. Delete
+// starts sarj with it in the background, because the files must outlive the
+// sarj process: deleting from inside the worktree's tmux session kills it.
+const PurgeCommand = "__purge-trash"
+
+// startPurge starts sarj again as a detached process that runs PurgeTrash on
+// trash, and returns without waiting.
+func startPurge(r exec.Runner, trash string) error {
+	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
+	return r.StartDetached(exe, PurgeCommand, trash)
+}
+
+// PurgeTrash deletes every entry in the trash folder and keeps the folder
+// itself, because another delete may be renaming into it. Deleting all
+// entries, not only the newest, also clears leftovers from a purge that was
+// cut off, for example by a reboot. A missing trash folder is not an error.
+//
+// Several purges may run on the same folder at once. os.RemoveAll handles
+// that: it treats files that vanish mid-walk as deleted. rm does not. BSD rm
+// stops at the first vanished folder and silently skips its other
+// arguments, and uutils rm leaves files behind.
+func PurgeTrash(trash string) error {
+	entries, err := os.ReadDir(trash)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	args := []string{"-rf", "--"}
-	for _, e := range entries {
-		args = append(args, filepath.Join(trash, e.Name()))
+	if err != nil {
+		return err
 	}
-	return r.StartDetached("rm", args...)
+	var errs []error
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(trash, e.Name())); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
