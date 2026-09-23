@@ -38,12 +38,9 @@ homebrew_casks:
     homepage: https://github.com/davidmks/sarj
     description: Git worktree + tmux session manager
     license: MIT
-    # The binaries are not notarized, so macOS would refuse to run them while
-    # the download's quarantine flag is set. goreleaser's hooks still emit the
-    # deprecated Ruby postflight block, so the declarative stanza goes here.
-    # goreleaser runs this text as a Go template, so {{ "{{staged_path}}" }}
-    # prints Homebrew's own {{staged_path}} token, which Homebrew fills in at
-    # install time.
+    # Removes the macOS download flag so the unsigned binary can run.
+    # custom_block, not hooks: goreleaser's hooks write a form Homebrew deprecated.
+    # The {{ "..." }} wrapper stops goreleaser from filling in Homebrew's {{staged_path}}.
     custom_block: |
       postflight_steps do
         on_macos do
