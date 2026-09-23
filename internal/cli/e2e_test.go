@@ -10,6 +10,7 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/davidmks/sarj/internal/cli"
 	"github.com/davidmks/sarj/internal/exec"
@@ -93,6 +94,12 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 	assert.Contains(t, buf.String(), "branch deleted")
 	assert.NoDirExists(t, wtPath)
 	assert.False(t, tmux.SessionExists(t.Context(), r, "test-wt"))
+
+	trash := filepath.Join(wtBase, ".sarj-trash")
+	require.Eventually(t, func() bool {
+		entries, err := os.ReadDir(trash)
+		return err == nil && len(entries) == 0
+	}, 10*time.Second, 20*time.Millisecond, "background rm should empty %s", trash)
 
 	rMain := &exec.DefaultRunner{Dir: repoPath}
 	_, err = rMain.Run(t.Context(), "git", "show-ref", "--verify", "--quiet", "refs/heads/test-wt")

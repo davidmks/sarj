@@ -238,6 +238,7 @@ func deleteOne(ctx context.Context, cmd *cobra.Command, r exec.Runner, t target,
 	fmt.Fprintf(os.Stderr, "Removing worktree %s...\n", t.name) //nolint:errcheck
 	if err := worktree.Delete(ctx, r, worktree.DeleteOpts{
 		Path:     t.wt.Path,
+		Locked:   t.wt.Locked,
 		Progress: os.Stderr,
 	}); err != nil {
 		return err

@@ -848,14 +848,14 @@ func TestDeleteCmd_CleanupBeforeKill(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 
-	wtRemove := r.indexOfCall("worktree remove")
+	purge := r.indexOfCall("rm -rf --")
 	branchDelete := r.indexOfCall("branch -D")
 	sessionKill := r.indexOfCall("kill-session")
 
-	assert.Greater(t, wtRemove, -1, "worktree remove should be called")
+	assert.Greater(t, purge, -1, "background rm should be started")
 	assert.Greater(t, branchDelete, -1, "branch -D should be called")
 	assert.Greater(t, sessionKill, -1, "kill-session should be called")
-	assert.Less(t, wtRemove, sessionKill, "worktree remove must happen before kill-session")
+	assert.Less(t, purge, sessionKill, "background rm must start before kill-session")
 	assert.Less(t, branchDelete, sessionKill, "branch delete must happen before kill-session")
 }
 
@@ -942,7 +942,7 @@ func TestDeleteCmd_InferFromCwd(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), "my-feature")
-	assert.True(t, r.hasCall("worktree remove"))
+	assert.NoDirExists(t, wtPath)
 }
 
 func TestDeleteCmd_InferFromCwd_Decline(t *testing.T) {
@@ -969,7 +969,7 @@ func TestDeleteCmd_InferFromCwd_Decline(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "--keep-branch"})
 
 	require.NoError(t, cmd.Execute())
-	assert.False(t, r.hasCall("worktree remove"))
+	assert.DirExists(t, wtPath)
 }
 
 func TestDeleteCmd_InferFromCwd_Subdirectory(t *testing.T) {
@@ -1001,7 +1001,7 @@ func TestDeleteCmd_InferFromCwd_Subdirectory(t *testing.T) {
 
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, buf.String(), "my-feature")
-	assert.True(t, r.hasCall("worktree remove"))
+	assert.NoDirExists(t, wtPath)
 }
 
 func TestDeleteCmd_InferFromCwd_MainWorktree(t *testing.T) {
@@ -1041,6 +1041,7 @@ func TestDeleteCmd_NamedMainWorktree(t *testing.T) {
 	err = cmd.Execute()
 	assert.ErrorContains(t, err, "cannot use the main worktree")
 	assert.False(t, r.hasCall("worktree remove"))
+	assert.False(t, r.hasCall("rm -rf"))
 }
 
 func TestDeleteCmd_InferFromCwd_NotInWorktree(t *testing.T) {
@@ -1073,7 +1074,7 @@ func TestDeleteCmd_MultiArg(t *testing.T) {
 	fakeWorktreeDir(t, wtB)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
-		"worktree " + wtA + "\nHEAD def\nbranch refs/heads/feat-a\n\n" +
+		"worktree " + wtA + "\nHEAD def\nbranch refs/heads/feat-a\nlocked\n\n" +
 		"worktree " + wtB + "\nHEAD ghi\nbranch refs/heads/feat-b\n\n"
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree list --porcelain": {out: porcelain},
@@ -1113,7 +1114,7 @@ func TestDeleteCmd_MultiArg_UnknownNameAborts(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ghost")
-	assert.False(t, r.hasCall("worktree remove"), "no side effect on unknown name")
+	assert.DirExists(t, wtA, "no side effect on unknown name")
 }
 
 func TestDeleteCmd_MultiArg_PartialFailure(t *testing.T) {
@@ -1126,7 +1127,7 @@ func TestDeleteCmd_MultiArg_PartialFailure(t *testing.T) {
 	fakeWorktreeDir(t, wtB)
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
-		"worktree " + wtA + "\nHEAD def\nbranch refs/heads/feat-a\n\n" +
+		"worktree " + wtA + "\nHEAD def\nbranch refs/heads/feat-a\nlocked\n\n" +
 		"worktree " + wtB + "\nHEAD ghi\nbranch refs/heads/feat-b\n\n"
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree list --porcelain":      {out: porcelain},
@@ -1142,7 +1143,8 @@ func TestDeleteCmd_MultiArg_PartialFailure(t *testing.T) {
 	err := cmd.Execute()
 	require.Error(t, err, "partial failure must return non-zero")
 	assert.Contains(t, err.Error(), "feat-a")
-	assert.True(t, r.hasCall("worktree remove --force "+wtB), "feat-b still attempted after feat-a failed")
+	assert.DirExists(t, wtA, "locked feat-a stays in place")
+	assert.NoDirExists(t, wtB, "feat-b still attempted after feat-a failed")
 }
 
 func TestDeleteCmd_YesFlag_DeleteBranch(t *testing.T) {
@@ -1258,9 +1260,9 @@ func TestDeleteCmd_StateFiltersTargets(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "--state", "merged", "-y"})
 
 	require.NoError(t, cmd.Execute())
-	assert.True(t, r.hasCall("worktree remove --force "+wtA), "a should be deleted")
-	assert.True(t, r.hasCall("worktree remove --force "+wtB), "b should be deleted")
-	assert.False(t, r.hasCall("worktree remove --force "+wtC), "c (open) should not be deleted")
+	assert.NoDirExists(t, wtA, "a should be deleted")
+	assert.NoDirExists(t, wtB, "b should be deleted")
+	assert.DirExists(t, wtC, "c (open) should not be deleted")
 }
 
 func TestDeleteCmd_StateMultipleValues(t *testing.T) {
@@ -1296,9 +1298,9 @@ func TestDeleteCmd_StateMultipleValues(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "--state", "merged,closed", "-y"})
 
 	require.NoError(t, cmd.Execute())
-	assert.True(t, r.hasCall("worktree remove --force "+wtA))
-	assert.True(t, r.hasCall("worktree remove --force "+wtB))
-	assert.False(t, r.hasCall("worktree remove --force "+wtC))
+	assert.NoDirExists(t, wtA)
+	assert.NoDirExists(t, wtB)
+	assert.DirExists(t, wtC)
 }
 
 func TestDeleteCmd_StateCaseInsensitive(t *testing.T) {
@@ -1331,8 +1333,8 @@ func TestDeleteCmd_StateCaseInsensitive(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "--state", "merged", "-y"})
 
 	require.NoError(t, cmd.Execute())
-	assert.True(t, r.hasCall("worktree remove --force "+wtA), "MERGED matches --state merged")
-	assert.False(t, r.hasCall("worktree remove --force "+wtB), "OPEN should not match")
+	assert.NoDirExists(t, wtA, "MERGED matches --state merged")
+	assert.DirExists(t, wtB, "OPEN should not match")
 }
 
 func TestDeleteCmd_StateNoMatchPreservesWorktrees(t *testing.T) {
@@ -1360,7 +1362,7 @@ func TestDeleteCmd_StateNoMatchPreservesWorktrees(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "--state", "nonexistent", "-y"})
 
 	require.NoError(t, cmd.Execute())
-	assert.False(t, r.hasCall("worktree remove"), "no worktrees should be removed")
+	assert.DirExists(t, wtA, "no worktrees should be removed")
 }
 
 func TestDeleteCmd_StateWithNamedArgs(t *testing.T) {
@@ -1398,9 +1400,9 @@ func TestDeleteCmd_StateWithNamedArgs(t *testing.T) {
 	cmd.SetArgs([]string{"delete", "a", "b", "--state", "merged", "-y"})
 
 	require.NoError(t, cmd.Execute())
-	assert.True(t, r.hasCall("worktree remove --force "+wtA))
-	assert.False(t, r.hasCall("worktree remove --force "+wtB), "b is open, filtered out")
-	assert.False(t, r.hasCall("worktree remove --force "+wtC), "c not in named args")
+	assert.NoDirExists(t, wtA)
+	assert.DirExists(t, wtB, "b is open, filtered out")
+	assert.DirExists(t, wtC, "c not in named args")
 }
 
 // renameFixture builds a repo holding one worktree on branch feat/old, in a
