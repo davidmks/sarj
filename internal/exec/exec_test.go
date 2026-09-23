@@ -2,6 +2,9 @@ package exec_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +68,29 @@ func TestDefaultRunner_Run_Dir(t *testing.T) {
 	require.NoError(t, err)
 	// /tmp may resolve to /private/tmp on macOS
 	assert.Contains(t, out, "tmp")
+}
+
+func TestDefaultRunner_StartDetached(t *testing.T) {
+	dir := t.TempDir()
+	r := &exec.DefaultRunner{Dir: dir}
+
+	// The command records its pid and process group, after a pause that
+	// shows StartDetached returned before the command finished.
+	err := r.StartDetached("sh", "-c", "sleep 0.2; echo $$ $(ps -o pgid= -p $$) > out")
+
+	require.NoError(t, err)
+	out := filepath.Join(dir, "out")
+	assert.NoFileExists(t, out, "should return without waiting")
+	require.Eventually(t, func() bool {
+		data, err := os.ReadFile(out)
+		return err == nil && strings.Contains(string(data), "\n")
+	}, 5*time.Second, 20*time.Millisecond)
+
+	data, err := os.ReadFile(out)
+	require.NoError(t, err)
+	fields := strings.Fields(string(data))
+	require.Len(t, fields, 2)
+	assert.Equal(t, fields[0], fields[1], "should lead its own session and process group")
 }
 
 func TestDefaultRunner_RunWithEnv(t *testing.T) {
