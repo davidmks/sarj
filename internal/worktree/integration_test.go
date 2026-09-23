@@ -54,7 +54,7 @@ func initTestRepo(t *testing.T) (repoPath string, runner *exec.DefaultRunner) {
 	return repoPath, runner
 }
 
-// requireTrashEmpties waits for the background rm started by Delete to clear
+// requireTrashEmpties waits for the background purge started by Delete to clear
 // the trash folder in wtBase.
 func requireTrashEmpties(t *testing.T, wtBase string) {
 	t.Helper()
@@ -62,7 +62,7 @@ func requireTrashEmpties(t *testing.T, wtBase string) {
 	require.Eventually(t, func() bool {
 		entries, err := os.ReadDir(trash)
 		return err == nil && len(entries) == 0
-	}, 10*time.Second, 20*time.Millisecond, "background rm should empty %s", trash)
+	}, 10*time.Second, 20*time.Millisecond, "background purge should empty %s", trash)
 }
 
 func TestIntegration_CreateListDelete(t *testing.T) {
@@ -123,7 +123,7 @@ func TestIntegration_CreateWithSymlinks(t *testing.T) {
 
 	require.NoError(t, worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wt.Path}))
 	requireTrashEmpties(t, wtBase)
-	assert.FileExists(t, filepath.Join(repoPath, ".env"), "rm must not follow symlinks into the main repo")
+	assert.FileExists(t, filepath.Join(repoPath, ".env"), "purge must not follow symlinks into the main repo")
 }
 
 // TestIntegration_DeleteFreesBranchAndName covers what the user does right

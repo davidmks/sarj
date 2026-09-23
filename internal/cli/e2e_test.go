@@ -113,7 +113,7 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 	require.Eventually(t, func() bool {
 		entries, err := os.ReadDir(trash)
 		return err == nil && len(entries) == 0
-	}, 10*time.Second, 20*time.Millisecond, "background rm should empty %s", trash)
+	}, 10*time.Second, 20*time.Millisecond, "background purge should empty %s", trash)
 
 	rMain := &exec.DefaultRunner{Dir: repoPath}
 	_, err = rMain.Run(t.Context(), "git", "show-ref", "--verify", "--quiet", "refs/heads/test-wt")

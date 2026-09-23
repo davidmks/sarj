@@ -124,7 +124,8 @@ type DeleteOpts struct {
 // Delete removes a worktree from git and frees its path right away. It moves
 // the directory into a .sarj-trash folder next to it, prunes git's record of
 // it, and starts a background process that deletes the files after Delete
-// returns. That background process outlives sarj.
+// returns. That background process outlives sarj. If prune fails, Delete
+// moves the directory back and returns the error.
 //
 // Locked worktrees, and directories that cannot be moved into the trash, go
 // through git worktree remove instead, which deletes the files before
@@ -134,18 +135,18 @@ func Delete(ctx context.Context, r exec.Runner, opts DeleteOpts) error {
 	w := progressWriter(opts.Progress)
 	name := filepath.Base(opts.Path)
 
-	var trash string
+	var moved string // the worktree's new path in the trash, once moved there
 	if _, err := os.Stat(opts.Path); errors.Is(err, fs.ErrNotExist) {
 		progress(w, "warning: directory already removed, pruning stale entry\n")
 	} else {
 		// git worktree prune skips locked entries, so a locked worktree moved
 		// to the trash would stay registered. git refuses to remove it instead.
 		if !opts.Locked {
-			if trash, err = moveToTrash(opts.Path); err != nil {
+			if moved, err = moveToTrash(opts.Path); err != nil {
 				progress(w, "warning: could not move worktree to trash, removing in place: %v\n", err)
 			}
 		}
-		if trash == "" {
+		if moved == "" {
 			if _, err := r.Run(ctx, "git", "worktree", "remove", "--force", opts.Path); err != nil {
 				return fmt.Errorf("removing worktree %s: %w", name, err)
 			}
@@ -153,15 +154,20 @@ func Delete(ctx context.Context, r exec.Runner, opts DeleteOpts) error {
 	}
 
 	if _, err := r.Run(ctx, "git", "worktree", "prune"); err != nil {
-		// After a move, git still lists the worktree until prune succeeds,
-		// so its branch counts as checked out and cannot be deleted.
-		if trash != "" {
+		if moved != "" {
+			// Until prune succeeds, git still lists the worktree and its branch
+			// counts as checked out. Moving the folder back leaves the worktree
+			// as it was found, so running delete again works.
+			if err := os.Rename(moved, opts.Path); err != nil {
+				progress(w, "warning: could not move worktree back from %s: %v\n", moved, err)
+			}
 			return fmt.Errorf("pruning worktree %s: %w", name, err)
 		}
 		progress(w, "warning: worktree prune failed: %v\n", err)
 	}
 
-	if trash != "" {
+	if moved != "" {
+		trash := filepath.Dir(moved)
 		if err := startPurge(r, trash); err != nil {
 			progress(w, "warning: could not start background cleanup of %s: %v\n", trash, err)
 		}

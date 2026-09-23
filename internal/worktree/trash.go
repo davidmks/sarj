@@ -1,11 +1,13 @@
 package worktree
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/davidmks/sarj/internal/exec"
 )
@@ -15,25 +17,40 @@ import (
 const trashDirName = ".sarj-trash"
 
 // moveToTrash renames the worktree directory into the trash folder next to it
-// and returns that trash folder. A rename is instant however many files the
+// and returns its new path. A rename is instant however many files the
 // worktree holds, while deleting them one by one takes seconds for large
 // dependency folders. Keeping the trash next to the worktree keeps it on the
 // same filesystem; the rename fails otherwise.
+//
+// The worktree moves straight to a unique name. Moving it into a new empty
+// folder instead would race a running purge, which could delete that folder
+// before the rename lands.
 func moveToTrash(path string) (string, error) {
 	trash := filepath.Join(filepath.Dir(path), trashDirName)
 	if err := os.MkdirAll(trash, 0o750); err != nil {
 		return "", err
 	}
-	// A unique parent folder keeps two deletes of the same name from colliding.
-	dir, err := os.MkdirTemp(trash, filepath.Base(path)+"-")
+	if err := requireRealDir(trash); err != nil {
+		return "", err
+	}
+	moved := filepath.Join(trash, filepath.Base(path)+"-"+strings.ToLower(rand.Text()))
+	if err := os.Rename(path, moved); err != nil {
+		return "", err
+	}
+	return moved, nil
+}
+
+// requireRealDir returns an error unless path is a directory itself, not a
+// symlink to one, so the trash can never point at an unrelated folder.
+func requireRealDir(path string) error {
+	fi, err := os.Lstat(path)
 	if err != nil {
-		return "", err
+		return err
 	}
-	if err := os.Rename(path, filepath.Join(dir, filepath.Base(path))); err != nil {
-		os.Remove(dir) //nolint:errcheck
-		return "", err
+	if !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory", path)
 	}
-	return trash, nil
+	return nil
 }
 
 // PurgeCommand is the hidden sarj subcommand that runs PurgeTrash. Delete
@@ -61,16 +78,19 @@ func startPurge(r exec.Runner, trash string) error {
 // stops at the first vanished folder and silently skips its other
 // arguments, and uutils rm leaves files behind.
 //
-// It refuses any folder not named .sarj-trash, so a wrong argument to the
-// hidden command cannot empty an unrelated folder.
+// It refuses any folder not named .sarj-trash, and a .sarj-trash that is a
+// symlink or a file, so a wrong argument to the hidden command cannot empty
+// an unrelated folder.
 func PurgeTrash(trash string) error {
 	if filepath.Base(filepath.Clean(trash)) != trashDirName {
 		return fmt.Errorf("refusing to purge %s: not a %s folder", trash, trashDirName)
 	}
-	entries, err := os.ReadDir(trash)
-	if errors.Is(err, fs.ErrNotExist) {
+	if err := requireRealDir(trash); errors.Is(err, fs.ErrNotExist) {
 		return nil
+	} else if err != nil {
+		return fmt.Errorf("refusing to purge %s: %w", trash, err)
 	}
+	entries, err := os.ReadDir(trash)
 	if err != nil {
 		return err
 	}

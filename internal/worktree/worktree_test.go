@@ -366,7 +366,8 @@ func TestDelete(t *testing.T) {
 
 	entries := trashEntries(t, base)
 	require.Len(t, entries, 1)
-	assert.FileExists(t, filepath.Join(entries[0], "my-feature", "file.txt"))
+	assert.True(t, strings.HasPrefix(filepath.Base(entries[0]), "my-feature-"), "entry %s should keep the worktree name", entries[0])
+	assert.FileExists(t, filepath.Join(entries[0], "file.txt"), "the worktree itself moves, with no folder around it")
 	assert.Equal(t, filepath.Join(base, ".sarj-trash"), purgeTarget(r))
 }
 
@@ -405,10 +406,31 @@ func TestDelete_TrashFails(t *testing.T) {
 	assert.Empty(t, purgeTarget(r))
 }
 
+func TestDelete_TrashIsSymlink(t *testing.T) {
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "my-feature")
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+	other := filepath.Join(t.TempDir(), "projects")
+	require.NoError(t, os.MkdirAll(other, 0o750))
+	require.NoError(t, os.Symlink(other, filepath.Join(base, ".sarj-trash")))
+	r := &fakeRunner{responses: map[string]response{"git worktree": {}}}
+	var buf bytes.Buffer
+
+	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath, Progress: &buf})
+
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "could not move worktree to trash")
+	assert.True(t, r.hasCall("worktree remove"))
+	entries, err := os.ReadDir(other)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing should move into the linked folder")
+}
+
 func TestDelete_PruneFailsAfterTrash(t *testing.T) {
 	base := t.TempDir()
 	wtPath := filepath.Join(base, "my-feature")
 	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(wtPath, "file.txt"), []byte("x"), 0o600))
 	r := &fakeRunner{responses: map[string]response{
 		"git worktree prune": {err: fmt.Errorf("prune failed")},
 	}}
@@ -417,6 +439,8 @@ func TestDelete_PruneFailsAfterTrash(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pruning worktree")
+	assert.FileExists(t, filepath.Join(wtPath, "file.txt"), "worktree should be moved back")
+	assert.Empty(t, trashEntries(t, base))
 	assert.Empty(t, purgeTarget(r))
 }
 
@@ -463,6 +487,20 @@ func TestPurgeTrash_RefusesOtherFolders(t *testing.T) {
 			assert.DirExists(t, keep)
 		})
 	}
+}
+
+func TestPurgeTrash_RefusesSymlink(t *testing.T) {
+	other := filepath.Join(t.TempDir(), "projects")
+	keep := filepath.Join(other, "keep")
+	require.NoError(t, os.MkdirAll(keep, 0o750))
+	trash := filepath.Join(t.TempDir(), ".sarj-trash")
+	require.NoError(t, os.Symlink(other, trash))
+
+	err := worktree.PurgeTrash(trash)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to purge")
+	assert.DirExists(t, keep)
 }
 
 // TestPurgeTrash_Concurrent runs several purges on the same trash at once,
