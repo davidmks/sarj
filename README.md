@@ -69,7 +69,7 @@ sarj delete feat/my-feature -D
 
 **`sarj delete`**
 - Kill tmux session
-- Remove worktree
+- Remove worktree: move it into a `.sarj-trash` folder next to it, then delete its files in the background
 - Optionally delete the branch
 
 ## Configuration
@@ -299,6 +299,8 @@ Create a worktree with optional tmux session.
 ### `sarj delete [name...] [flags]`
 
 Remove one or more worktrees and kill their tmux sessions. With no name, deletes the worktree at the current directory.
+
+Delete returns right away, even for worktrees with large dependency folders. It moves each worktree into a `.sarj-trash` folder next to it, and a background process deletes the files afterwards. That folder is safe to delete by hand. Locked worktrees, and worktrees that can't be moved there, are removed in place by `git worktree remove`.
 
 | Flag | Description |
 |------|-------------|

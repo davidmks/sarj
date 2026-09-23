@@ -8,6 +8,7 @@ import (
 	"os"
 	osexec "os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +35,12 @@ type Runner interface {
 	// RunInteractive connects the command's stdin/stdout/stderr to the
 	// terminal — used for things like tmux attach that need a live TTY.
 	RunInteractive(ctx context.Context, name string, args ...string) error
+
+	// StartDetached starts a command and returns without waiting for it.
+	// The command runs in its own session with no context, so it outlives
+	// sarj and survives the SIGHUP sent when sarj's tmux session is killed.
+	// Its output is discarded, so it fails silently.
+	StartDetached(name string, args ...string) error
 }
 
 // DefaultRunner implements Runner using os/exec.
@@ -105,4 +112,19 @@ func (r *DefaultRunner) RunInteractive(ctx context.Context, name string, args ..
 	}
 
 	return nil
+}
+
+// StartDetached starts a command in its own session and releases it.
+// Stdio stays nil, which connects it to /dev/null.
+func (r *DefaultRunner) StartDetached(name string, args ...string) error {
+	cmd := osexec.Command(name, args...)
+	if r.Dir != "" {
+		cmd.Dir = r.Dir
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("starting %s %s: %w", name, strings.Join(args, " "), err)
+	}
+	return cmd.Process.Release()
 }

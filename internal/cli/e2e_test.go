@@ -10,13 +10,28 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/davidmks/sarj/internal/cli"
 	"github.com/davidmks/sarj/internal/exec"
 	"github.com/davidmks/sarj/internal/tmux"
+	"github.com/davidmks/sarj/internal/worktree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestMain lets the test binary stand in for sarj. A real Delete starts
+// os.Executable() with the purge command in the background, and in tests that
+// is this binary. Without this, it would run the whole test suite again.
+func TestMain(m *testing.M) {
+	if len(os.Args) == 3 && os.Args[1] == worktree.PurgeCommand {
+		if err := worktree.PurgeTrash(os.Args[2]); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 func requireTmux(t *testing.T) {
 	t.Helper()
@@ -93,6 +108,12 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 	assert.Contains(t, buf.String(), "branch deleted")
 	assert.NoDirExists(t, wtPath)
 	assert.False(t, tmux.SessionExists(t.Context(), r, "test-wt"))
+
+	trash := filepath.Join(wtBase, ".sarj-trash")
+	require.Eventually(t, func() bool {
+		entries, err := os.ReadDir(trash)
+		return err == nil && len(entries) == 0
+	}, 10*time.Second, 20*time.Millisecond, "background purge should empty %s", trash)
 
 	rMain := &exec.DefaultRunner{Dir: repoPath}
 	_, err = rMain.Run(t.Context(), "git", "show-ref", "--verify", "--quiet", "refs/heads/test-wt")

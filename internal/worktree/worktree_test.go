@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/davidmks/sarj/internal/config"
@@ -46,6 +47,11 @@ func (f *fakeRunner) RunWithEnv(ctx context.Context, _ []string, name string, ar
 
 func (f *fakeRunner) RunInteractive(_ context.Context, _ string, _ ...string) error {
 	return f.interactiveErr
+}
+
+func (f *fakeRunner) StartDetached(name string, args ...string) error {
+	_, err := f.Run(context.Background(), name, args...)
+	return err
 }
 
 func (f *fakeRunner) hasCall(substr string) bool {
@@ -320,33 +326,225 @@ func TestCreate_FetchFailsFallsBackToLocal(t *testing.T) {
 	assert.True(t, r.hasCall(wtBase+"/offline-new main"))
 }
 
-func TestDelete(t *testing.T) {
-	wtPath := filepath.Join(t.TempDir(), "my-feature")
-	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+// purgeTarget returns the trash folder passed to the background purge, or ""
+// when Delete did not start one.
+func purgeTarget(r *fakeRunner) string {
+	for _, c := range r.calls {
+		if _, trash, ok := strings.Cut(c, " "+worktree.PurgeCommand+" "); ok {
+			return trash
+		}
+	}
+	return ""
+}
 
-	r := &fakeRunner{responses: map[string]response{
-		"git worktree": {},
-	}}
+// trashEntries returns the full paths of the entries in base's trash folder.
+func trashEntries(t *testing.T, base string) []string {
+	t.Helper()
+	trash := filepath.Join(base, ".sarj-trash")
+	entries, err := os.ReadDir(trash)
+	require.NoError(t, err)
+	paths := make([]string, len(entries))
+	for i, e := range entries {
+		paths[i] = filepath.Join(trash, e.Name())
+	}
+	return paths
+}
+
+func TestDelete(t *testing.T) {
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "my-feature")
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(wtPath, "file.txt"), []byte("x"), 0o600))
+	r := &fakeRunner{responses: map[string]response{"git worktree": {}}}
 
 	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath})
 
 	require.NoError(t, err)
-	assert.True(t, r.hasCall("worktree remove"))
+	assert.NoDirExists(t, wtPath)
+	assert.False(t, r.hasCall("worktree remove"), "should move to trash instead of removing in place")
 	assert.True(t, r.hasCall("worktree prune"))
+
+	entries := trashEntries(t, base)
+	require.Len(t, entries, 1)
+	assert.True(t, strings.HasPrefix(filepath.Base(entries[0]), "my-feature-"), "entry %s should keep the worktree name", entries[0])
+	assert.FileExists(t, filepath.Join(entries[0], "file.txt"), "the worktree itself moves, with no folder around it")
+	assert.Equal(t, filepath.Join(base, ".sarj-trash"), purgeTarget(r))
 }
 
-func TestDelete_RemoveFails(t *testing.T) {
-	wtPath := filepath.Join(t.TempDir(), "locked-wt")
+func TestDelete_Locked(t *testing.T) {
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "locked-wt")
 	require.NoError(t, os.MkdirAll(wtPath, 0o750))
-
 	r := &fakeRunner{responses: map[string]response{
-		"git worktree remove": {err: fmt.Errorf("locked")},
+		"git worktree remove": {err: fmt.Errorf("cannot remove a locked working tree")},
+	}}
+
+	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath, Locked: true})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "removing worktree")
+	assert.DirExists(t, wtPath)
+	assert.NoDirExists(t, filepath.Join(base, ".sarj-trash"))
+	assert.Empty(t, purgeTarget(r))
+}
+
+func TestDelete_TrashFails(t *testing.T) {
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "my-feature")
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+	// A regular file where the trash folder should be makes the move fail.
+	require.NoError(t, os.WriteFile(filepath.Join(base, ".sarj-trash"), nil, 0o600))
+	r := &fakeRunner{responses: map[string]response{"git worktree": {}}}
+	var buf bytes.Buffer
+
+	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath, Progress: &buf})
+
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "could not move worktree to trash")
+	assert.True(t, r.hasCall("worktree remove"))
+	assert.True(t, r.hasCall("worktree prune"))
+	assert.Empty(t, purgeTarget(r))
+}
+
+func TestDelete_TrashIsSymlink(t *testing.T) {
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "my-feature")
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+	other := filepath.Join(t.TempDir(), "projects")
+	require.NoError(t, os.MkdirAll(other, 0o750))
+	require.NoError(t, os.Symlink(other, filepath.Join(base, ".sarj-trash")))
+	r := &fakeRunner{responses: map[string]response{"git worktree": {}}}
+	var buf bytes.Buffer
+
+	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath, Progress: &buf})
+
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "could not move worktree to trash")
+	assert.True(t, r.hasCall("worktree remove"))
+	entries, err := os.ReadDir(other)
+	require.NoError(t, err)
+	assert.Empty(t, entries, "nothing should move into the linked folder")
+}
+
+func TestDelete_PruneFailsAfterTrash(t *testing.T) {
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "my-feature")
+	require.NoError(t, os.MkdirAll(wtPath, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(wtPath, "file.txt"), []byte("x"), 0o600))
+	r := &fakeRunner{responses: map[string]response{
+		"git worktree prune": {err: fmt.Errorf("prune failed")},
 	}}
 
 	err := worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "removing worktree")
+	assert.Contains(t, err.Error(), "pruning worktree")
+	assert.FileExists(t, filepath.Join(wtPath, "file.txt"), "worktree should be moved back")
+	assert.Empty(t, trashEntries(t, base))
+	assert.Empty(t, purgeTarget(r))
+}
+
+func TestPurgeTrash(t *testing.T) {
+	trash := filepath.Join(t.TempDir(), ".sarj-trash")
+	// A fresh entry and a leftover from an earlier purge that was cut off.
+	for _, dir := range []string{"new-123/new/node_modules/pkg", "old-456/old"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(trash, dir), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(trash, dir, "f"), []byte("x"), 0o600))
+	}
+
+	require.NoError(t, worktree.PurgeTrash(trash))
+
+	assert.DirExists(t, trash, "a delete may be renaming into it")
+	entries, err := os.ReadDir(trash)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestPurgeTrash_MissingFolder(t *testing.T) {
+	assert.NoError(t, worktree.PurgeTrash(filepath.Join(t.TempDir(), ".sarj-trash")))
+}
+
+func TestPurgeTrash_RefusesOtherFolders(t *testing.T) {
+	tests := []struct {
+		name string
+		dir  string
+	}{
+		{name: "unrelated folder", dir: "projects"},
+		{name: "similar name", dir: ".sarj-trash-old"},
+		{name: "inside the trash", dir: ".sarj-trash/entry"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), tt.dir)
+			keep := filepath.Join(dir, "keep")
+			require.NoError(t, os.MkdirAll(keep, 0o750))
+
+			err := worktree.PurgeTrash(dir)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "refusing to purge")
+			assert.DirExists(t, keep)
+		})
+	}
+}
+
+func TestPurgeTrash_RefusesSymlink(t *testing.T) {
+	other := filepath.Join(t.TempDir(), "projects")
+	keep := filepath.Join(other, "keep")
+	require.NoError(t, os.MkdirAll(keep, 0o750))
+	trash := filepath.Join(t.TempDir(), ".sarj-trash")
+	require.NoError(t, os.Symlink(other, trash))
+
+	err := worktree.PurgeTrash(trash)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to purge")
+	assert.DirExists(t, keep)
+}
+
+// TestPurgeTrash_Concurrent runs several purges on the same trash at once,
+// as a bulk delete does. Each one must finish every entry even when another
+// purge deletes files under it.
+func TestPurgeTrash_Concurrent(t *testing.T) {
+	trash := filepath.Join(t.TempDir(), ".sarj-trash")
+	for i := range 5 {
+		for j := range 50 {
+			dir := filepath.Join(trash, fmt.Sprintf("wt%d-x", i), fmt.Sprintf("wt%d", i), fmt.Sprintf("pkg%d", j), "lib")
+			require.NoError(t, os.MkdirAll(dir, 0o750))
+			for k := range 5 {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%d", k)), nil, 0o600))
+			}
+		}
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, 5)
+	for i := range 5 {
+		wg.Go(func() { errs[i] = worktree.PurgeTrash(trash) })
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		assert.NoError(t, err)
+	}
+	entries, err := os.ReadDir(trash)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestDelete_SameNameTwice(t *testing.T) {
+	base := t.TempDir()
+	wtPath := filepath.Join(base, "my-feature")
+	r := &fakeRunner{responses: map[string]response{"git worktree": {}}}
+
+	for range 2 {
+		require.NoError(t, os.MkdirAll(wtPath, 0o750))
+		require.NoError(t, worktree.Delete(t.Context(), r, worktree.DeleteOpts{Path: wtPath}))
+	}
+
+	assert.Len(t, trashEntries(t, base), 2)
+	assert.False(t, r.hasCall("worktree remove"), "second delete should not fall back")
 }
 
 func TestDelete_StaleEntry(t *testing.T) {

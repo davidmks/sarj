@@ -90,6 +90,20 @@ func newDeleteCmd(r exec.Runner) *cobra.Command {
 	return cmd
 }
 
+// newPurgeTrashCmd is the hidden command that worktree.Delete starts in the
+// background to delete the files of removed worktrees. It needs no repo or
+// config, only the trash folder.
+func newPurgeTrashCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    worktree.PurgeCommand + " <trash-dir>",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return worktree.PurgeTrash(args[0])
+		},
+	}
+}
+
 type deleteOpts struct {
 	deleteBranch bool
 	keepBranch   bool
@@ -238,6 +252,7 @@ func deleteOne(ctx context.Context, cmd *cobra.Command, r exec.Runner, t target,
 	fmt.Fprintf(os.Stderr, "Removing worktree %s...\n", t.name) //nolint:errcheck
 	if err := worktree.Delete(ctx, r, worktree.DeleteOpts{
 		Path:     t.wt.Path,
+		Locked:   t.wt.Locked,
 		Progress: os.Stderr,
 	}); err != nil {
 		return err

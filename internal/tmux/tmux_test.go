@@ -52,6 +52,11 @@ func (f *fakeRunner) RunInteractive(_ context.Context, name string, args ...stri
 	return nil
 }
 
+func (f *fakeRunner) StartDetached(name string, args ...string) error {
+	_, err := f.Run(context.Background(), name, args...)
+	return err
+}
+
 func (f *fakeRunner) hasCall(substr string) bool {
 	for _, c := range f.calls {
 		if strings.Contains(c, substr) {
