@@ -1,6 +1,6 @@
 // Package status runs the user-configured status hook against worktrees.
 //
-// The hook is a forge-agnostic shell command. The branch and worktree path
+// The hook is any shell command, so it works with any git host. The branch and worktree path
 // are exposed as the BRANCH and SARJ_WT_PATH environment variables; the
 // command references them via standard shell expansion ($BRANCH,
 // $SARJ_WT_PATH). Its trimmed stdout becomes the worktree's status. Non-zero
@@ -27,7 +27,7 @@ const Unknown = "unknown"
 const DefaultTimeout = 10 * time.Second
 
 // MaxParallel caps the number of hook invocations that run concurrently.
-// The hook is typically a forge API call (e.g. `gh pr view`); fanning out
+// The hook is typically a git host API call (e.g. `gh pr list`); fanning out
 // to dozens of those at once trips rate limits.
 const MaxParallel = 8
 

@@ -775,7 +775,7 @@ func TestDeleteCmd_StaleEntry(t *testing.T) {
 	saveCwd(t)
 	dir := newRepoDir(t)
 	wtPath := filepath.Join(dir, "wt", "stale-wt")
-	// Intentionally NOT creating the directory — simulates a stale entry.
+	// Intentionally NOT creating the directory, to simulate a stale entry.
 
 	porcelain := "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 		"worktree " + wtPath + "\nHEAD def\nbranch refs/heads/stale-wt\n\n"
@@ -1197,7 +1197,7 @@ func TestDeleteCmd_NoSwitchWhenDifferentSession(t *testing.T) {
 }
 
 // writeStatusConfig appends a [status] section whose command is a no-op
-// `check $BRANCH` — the fakeRunner keys responses on the BRANCH env suffix,
+// `check $BRANCH`: the fakeRunner keys responses on the BRANCH env suffix,
 // so the literal command body is irrelevant.
 func writeStatusConfig(t *testing.T, dir string) {
 	t.Helper()

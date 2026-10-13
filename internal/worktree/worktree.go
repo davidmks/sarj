@@ -130,7 +130,7 @@ type DeleteOpts struct {
 // Locked worktrees, and directories that cannot be moved into the trash, go
 // through git worktree remove instead, which deletes the files before
 // returning. If the directory is already gone, Delete only prunes the stale
-// entry. Branch deletion is handled by the CLI layer (may require user prompt).
+// entry. The CLI layer deletes the branch, since that may need a prompt.
 func Delete(ctx context.Context, r exec.Runner, opts DeleteOpts) error {
 	w := progressWriter(opts.Progress)
 	name := filepath.Base(opts.Path)

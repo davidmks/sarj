@@ -164,7 +164,7 @@ func TestIntegration_Rename(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Uncommitted work must survive the move — that is the whole point of
+	// Uncommitted work must survive the move: that is the whole point of
 	// renaming after planning rather than before.
 	scratch := filepath.Join(wt.Path, "scratch.txt")
 	require.NoError(t, os.WriteFile(scratch, []byte("work in progress"), 0o600))

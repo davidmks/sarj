@@ -27,13 +27,13 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) (string, error)
 
 	// RunWithEnv is like Run but appends extra env vars to the parent
-	// environment and returns trimmed *stdout only* — stderr is surfaced
+	// environment and returns trimmed *stdout only*. Stderr is surfaced
 	// via the returned error. Used by the status hook so diagnostics
 	// (e.g. `gh` warnings) don't leak into the state token.
 	RunWithEnv(ctx context.Context, env []string, name string, args ...string) (string, error)
 
 	// RunInteractive connects the command's stdin/stdout/stderr to the
-	// terminal — used for things like tmux attach that need a live TTY.
+	// terminal, for commands like tmux attach that need a live TTY.
 	RunInteractive(ctx context.Context, name string, args ...string) error
 
 	// StartDetached starts a command and returns without waiting for it.

@@ -98,7 +98,8 @@ func runList(cmd *cobra.Command, r exec.Runner, output string) error {
 	return printText(cmd.OutOrStdout(), entries, showStatus)
 }
 
-// buildEntries returns one listEntry per non-main worktree, base-populated only.
+// buildEntries returns one listEntry per non-main worktree, with only the
+// fields from `git worktree list` filled in.
 func buildEntries(wts []worktree.Worktree, mainPath string) []listEntry {
 	entries := make([]listEntry, 0, len(wts))
 	for _, wt := range wts {
@@ -146,9 +147,9 @@ func annotateTmux(ctx context.Context, r exec.Runner, entries []listEntry) {
 	}
 }
 
-// loadListConfig loads the merged config when we're inside a repo. List used
-// to work without config; it still does — config is only needed for the
-// optional status hook, so a missing repo root resolves to a nil config.
+// loadListConfig loads the merged config when inside a repo. Outside a repo
+// it returns a nil config: list only needs config for the optional status
+// hook.
 func loadListConfig(repoRoot string) (*config.Config, error) {
 	if repoRoot == "" {
 		return nil, nil
@@ -188,7 +189,7 @@ func parseStatusTimeout(raw string) (time.Duration, error) {
 }
 
 // enrichOne fills in dirty, head subject/date, upstream, and ahead/behind for
-// an already-base-populated entry. Per-call git failures are returned as
+// an entry from buildEntries. Per-call git failures are returned as
 // warnings (caller drains them after wg.Wait); failed fields stay at zero.
 func enrichOne(ctx context.Context, r exec.Runner, e *listEntry) []string {
 	var warnings []string
