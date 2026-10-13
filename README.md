@@ -1,15 +1,12 @@
 # sarj
 
-**/ˈʃɒrʲ/ — Hungarian for shoot, sprout, new growth from a living tree. Also: offspring, descendant.**
+**/ˈʃɒrʲ/: Hungarian for shoot, sprout, new growth from a living tree. Also: offspring, descendant.**
 
-Git worktree + tmux session manager. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session — one command to tear it all down. tmux is optional.
-
-## Requirements
-
-- **git** — sarj manages git worktrees
-- **tmux** (optional) — for session management. Without tmux, sarj works as a pure worktree manager.
+Git worktree + tmux session manager. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session. One command to tear it all down. tmux is optional.
 
 ## Install
+
+sarj needs **git**. **tmux** is optional: without it, sarj works as a pure worktree manager.
 
 ### Homebrew
 
@@ -53,239 +50,17 @@ sarj delete feat/my-feature
 sarj delete feat/my-feature -D
 ```
 
-## How it works
-
-**`sarj create`**
-- Fetch latest from remote
-- Create worktree and branch
-- Symlink shared files (`.env`, secrets, etc.)
-- Run setup command — rolls back everything on failure
-- Open tmux session with configured windows/panes
-
-**`sarj rename`**
-- Rename the branch
-- Move the worktree directory alongside it — rolls the branch name back on failure
-- Rename the tmux session
-
-**`sarj delete`**
-- Kill tmux session
-- Remove worktree: move it into a `.sarj-trash` folder next to it, then delete its files in the background
-- Optionally delete the branch
-
-## Configuration
-
-sarj works with zero configuration. To customize, use `sarj init`:
-
-```bash
-# Per-project config (commit to repo)
-sarj init
-
-# Global config (personal preferences)
-sarj init --global
-
-# Local config (per-user, per-project — gitignored)
-sarj init --local
-```
-
-### Global: `~/.config/sarj/config.toml`
-
-Personal preferences — worktree location, tmux windows, auto-attach behavior. `{{.RepoName}}` expands to the repository directory name.
-
-```toml
-worktree_base = "~/wt/{{.RepoName}}"
-default_branch = "main"
-auto_attach = true
-
-[tmux]
-enabled = true
-
-[[tmux.windows]]
-name = "terminal"
-command = ""
-
-[[tmux.windows]]
-name = "editor"
-command = "nvim ."
-env_file = ".env.test"
-
-[[tmux.windows]]
-name = "script"
-command = ""
-env = { UV_ENV_FILE = ".env" }
-```
-
-**Environment variables**: Use `env_file` to source a file (all variables are exported) or `env` to set individual variables. Both can be combined — the file is sourced first, then individual vars are exported. Panes inherit environment from their parent window.
-
-Windows can have panes for side-by-side layouts:
-
-```toml
-[[tmux.windows]]
-name = "dev"
-
-[[tmux.windows.panes]]
-command = "make dev"
-size = 70
-
-[[tmux.windows.panes]]
-command = "make test-watch"
-split = "horizontal"
-```
-
-Use `focus = true` to control which window is active on attach (defaults to the first window):
-
-```toml
-[[tmux.windows]]
-name = "editor"
-command = "nvim ."
-
-[[tmux.windows]]
-name = "shell"
-focus = true
-```
-
-Panes support `focus` too — select a specific pane instead of the last one created:
-
-```toml
-[[tmux.windows.panes]]
-command = "nvim ."
-focus = true
-
-[[tmux.windows.panes]]
-command = "make watch"
-split = "horizontal"
-size = 30
-```
-
-#### Command placeholders
-
-Window and pane commands can include placeholders that are substituted at session creation:
-
-| Placeholder | Source | Notes |
-|------|--------|-------|
-| `{{.Args}}` | The `--args` flag passed to `sarj create` | Shell-quoted to preserve word boundaries |
-| `{{.SetupCommand}}` | The `setup_command` config value | Inlined as a shell snippet (not quoted) |
-
-This makes it possible to keep the layout in your global config and let projects supply only the data they own. For example, the global config defines a 3-pane layout where the third pane runs the project's setup command:
-
-```toml
-# ~/.config/sarj/config.toml
-[[tmux.windows]]
-name = "dev"
-
-[[tmux.windows.panes]]
-command = "claude {{.Args}}"
-focus = true
-
-[[tmux.windows.panes]]
-command = "nvim"
-split = "horizontal"
-
-[[tmux.windows.panes]]
-command = "{{.SetupCommand}}"
-split = "vertical"
-size = 30
-```
-
-Each project then declares only its own `setup_command` in `.sarj.toml`, and the third pane runs whatever that project supplies. If a placeholder's value is empty, the placeholder is removed cleanly.
-
-**Interaction with `--no-setup` and `auto_setup`:**
-
-- `sarj create --no-setup` clears `{{.SetupCommand}}` (the placeholder resolves to empty) so the user's explicit opt-out also stops the tmux-driven run.
-- `auto_setup = false` only skips the synchronous `setup_command` run; `{{.SetupCommand}}` still resolves to its value, which is the normal way to defer setup into a tmux pane.
-
-### Per-project: `.sarj.toml`
-
-Team-shared settings — setup command, symlinks, default branch, tmux windows.
-
-```toml
-default_branch = "trunk"
-setup_command = "make setup"
-
-symlinks = [
-    ".env",
-    ".env.secrets",
-    "ssl",
-    ".claude/settings.local.json",
-]
-```
-
-#### Running setup asynchronously in tmux
-
-By default, `setup_command` runs synchronously before the tmux session opens, blocking until it finishes. To skip the synchronous run and instead launch setup in tmux, set `auto_setup = false` and add either a dedicated window or a pane.
-
-**As a window:**
-
-```toml
-setup_command = "make setup"
-auto_setup = false  # skip the synchronous setup run
-
-[[tmux.windows]]
-name = "setup"
-command = "make setup && exit"  # auto-closes on success; drop "&& exit" to keep open
-
-[[tmux.windows]]
-name = "editor"
-command = "nvim ."
-focus = true
-```
-
-**As a pane** (alongside your editor in the same window):
-
-```toml
-setup_command = "make setup"
-auto_setup = false
-
-[[tmux.windows]]
-name = "dev"
-
-[[tmux.windows.panes]]
-command = "nvim ."
-size = 70
-focus = true
-
-[[tmux.windows.panes]]
-command = "make setup"
-split = "horizontal"
-```
-
-Setup runs alongside your work instead of blocking. `--no-setup` only skips the synchronous `setup_command` run during `sarj create` (and forces it off even when `auto_setup = true`); it does not stop a tmux window or pane that has its own command. Use `--no-tmux` to skip the tmux session entirely.
-
-#### Status hook
-
-A shell command run per worktree. Trimmed stdout is the state. Non-zero exit, empty output, or timeout (default 10s, configurable) all map to `unknown`. Forge-agnostic — no `gh` dep, no caching.
-
-```toml
-[status]
-command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
-timeout = "10s"     # optional; accepts any time.ParseDuration value
-```
-
-`gh pr list --state all` is preferred over `gh pr view` so CLOSED-not-merged PRs are detected too. `--state` matches case-insensitively, so a hook returning `MERGED` matches `--state merged`.
-
-The branch name and worktree path are exposed as environment variables so values aren't interpolated into the shell command (no quoting, no injection):
-
-| Variable | Value |
-|----------|-------|
-| `$BRANCH` | Worktree branch name |
-| `$SARJ_WT_PATH` | Worktree absolute path |
-
-When configured, `sarj list` adds a `STATUS` column and populates the JSON `status` field, and `sarj delete --state merged` filters by the token. When unset, the column is omitted, JSON `status` is `null`, and `--state` errors. Compose with `jq` for ad-hoc filters:
-
-```sh
-sarj list -o json | jq -r '.[] | select(.status=="merged") | .name' | xargs sarj delete -y
-```
-
-### Local: `.sarj.local.toml`
-
-Per-user overrides for a specific project — gitignored, never committed. Sections defined here replace the corresponding section from the project or global config. Generate with `sarj init --local`.
-
-When multiple configs exist: **Global → Project → Local**, each layer overrides the one above for sections it defines.
-
 ## Commands
 
 ### `sarj create [name] [flags]`
 
-Create a worktree with optional tmux session.
+Create a worktree with optional tmux session. With no name, sarj generates one.
+
+1. Fetch latest from remote
+2. Create worktree and branch
+3. Symlink shared files (`.env`, secrets, etc.)
+4. Run setup command. If it fails, sarj rolls back everything.
+5. Open tmux session with configured windows/panes
 
 | Flag | Description |
 |------|-------------|
@@ -308,13 +83,13 @@ Delete returns right away, even for worktrees with large dependency folders. It 
 | `-D, --delete-branch` | Delete the branch (no prompt) |
 | `--keep-branch` | Keep the branch (no prompt) |
 | `-y, --yes` | Skip prompts (defaults to keep-branch) |
-| `--state <list>` | Filter by status hook output; repeat or comma-separate (e.g. `--state=merged,closed`) |
+| `--state <list>` | Filter by [status hook](#status-hook) output; repeat or comma-separate (e.g. `--state=merged,closed`) |
 
 ### `sarj rename [name] <new-branch> [flags]`
 
 Rename a worktree's branch, directory, and tmux session in one step. With no name, renames the worktree at the current directory.
 
-The directory moves to a sibling of where it is now, so a worktree kept outside `worktree_base` stays put. Uncommitted changes survive the move, and your shell and tmux panes follow the directory.
+The directory moves to a sibling of where it is now, so a worktree kept outside `worktree_base` stays put. If the move fails, sarj renames the branch back. Uncommitted changes survive the move, and your shell and tmux panes follow the directory.
 
 | Flag | Description |
 |------|-------------|
@@ -325,11 +100,181 @@ Git does not rename the remote branch, so a branch that already tracks one keeps
 
 ### `sarj list [-o text|json]`
 
-List worktrees with branch, ahead/behind, last-commit age, dirty flag, and tmux session status. The `STATUS` column appears when a [status hook](#status-hook) is configured. `-o json` emits a stable schema for piping into `jq`.
+List worktrees with branch, ahead/behind, last-commit age, dirty flag, and tmux session status. The `STATUS` column appears when a [status hook](#status-hook) is configured. `-o json` prints JSON for piping into `jq`.
 
 ### `sarj init [--global | --local]`
 
 Generate a config file with commented defaults.
+
+## Configuration
+
+sarj works with zero configuration. To customize, generate a config file with `sarj init`.
+
+| File | Created by | Use for |
+|------|------------|---------|
+| `~/.config/sarj/config.toml` | `sarj init --global` | Personal preferences: worktree location, tmux layout, auto-attach |
+| `.sarj.toml` | `sarj init` | Team settings, committed to the repo: setup command, symlinks, default branch |
+| `.sarj.local.toml` | `sarj init --local` | Your own overrides for one project. Add it to `.gitignore`. |
+
+sarj reads them in order: **Global → Project → Local**. Each file overrides the ones before it, but only for the keys it sets. A file that defines `tmux.windows` replaces the whole window list.
+
+### Keys
+
+| Key | Default | Set in | Description |
+|-----|---------|--------|-------------|
+| `worktree_base` | `~/wt/{{.RepoName}}` | global, local | Where worktrees go. `{{.RepoName}}` is the repository directory name. |
+| `default_branch` | `main` | any | Base branch when `-b` is not given |
+| `auto_attach` | `true` | global | Attach to the tmux session after `create` |
+| `setup_command` | none | any | Shell command run in the new worktree |
+| `auto_setup` | `true` | any | Run `setup_command` during `create`. See [running setup in tmux](#running-setup-in-tmux). |
+| `symlinks` | none | any | Files and folders to symlink from the main checkout |
+| `tmux.enabled` | `true` | global | Create a tmux session |
+| `tmux.windows` | one `terminal` window | any | Windows to open. See [tmux layout](#tmux-layout). |
+| `status.command` | none | any | See [status hook](#status-hook) |
+| `status.timeout` | `10s` | any | Time limit for the status hook, e.g. `500ms`, `5s`, `1m` |
+
+Example `.sarj.toml`:
+
+```toml
+default_branch = "trunk"
+setup_command = "make setup"
+
+symlinks = [
+    ".env",
+    ".env.secrets",
+    "ssl",
+    ".claude/settings.local.json",
+]
+```
+
+### tmux layout
+
+Each `[[tmux.windows]]` entry opens a window. `command` runs in it on start.
+
+```toml
+[[tmux.windows]]
+name = "terminal"
+
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+focus = true
+```
+
+`focus = true` controls which window is active on attach (defaults to the first window).
+
+**Panes.** Windows can have panes for side-by-side layouts. `split` is `vertical` (default) or `horizontal`. `size` is a percentage (default 50). Panes support `focus` too, to select a specific pane instead of the last one created.
+
+```toml
+[[tmux.windows]]
+name = "dev"
+
+[[tmux.windows.panes]]
+command = "nvim ."
+size = 70
+focus = true
+
+[[tmux.windows.panes]]
+command = "make test-watch"
+split = "horizontal"
+```
+
+**Environment variables.** Use `env_file` to source a file (all variables are exported) or `env` to set individual variables. If you use both, sarj sources the file first, then exports the individual vars. Panes inherit environment from their parent window.
+
+```toml
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+env_file = ".env.test"
+
+[[tmux.windows]]
+name = "script"
+env = { UV_ENV_FILE = ".env" }
+```
+
+### Command placeholders
+
+Window and pane commands can include placeholders. sarj fills them in when it creates the session. If a placeholder's value is empty, sarj removes it.
+
+| Placeholder | Source | Notes |
+|------|--------|-------|
+| `{{.Args}}` | The `--args` flag passed to `sarj create` | Shell-quoted to preserve word boundaries |
+| `{{.SetupCommand}}` | The `setup_command` config value | Inlined as a shell snippet (not quoted) |
+
+This lets you keep the layout in your global config and let each project supply only its own `setup_command`. For example, a global 3-pane layout where the third pane runs the project's setup command:
+
+```toml
+# ~/.config/sarj/config.toml
+[[tmux.windows]]
+name = "dev"
+
+[[tmux.windows.panes]]
+command = "claude {{.Args}}"
+focus = true
+
+[[tmux.windows.panes]]
+command = "nvim"
+split = "horizontal"
+
+[[tmux.windows.panes]]
+command = "{{.SetupCommand}}"
+split = "vertical"
+size = 30
+```
+
+### Running setup in tmux
+
+By default, `setup_command` runs before the tmux session opens, and `create` waits for it to finish. To run setup in a tmux window or pane instead, set `auto_setup = false` and add a window or pane that runs it:
+
+```toml
+setup_command = "make setup"
+auto_setup = false
+
+[[tmux.windows]]
+name = "setup"
+command = "make setup && exit"  # closes on success; drop "&& exit" to keep it open
+
+[[tmux.windows]]
+name = "editor"
+command = "nvim ."
+focus = true
+```
+
+You can also use `command = "{{.SetupCommand}}"` in a pane, as in the [placeholder example](#command-placeholders).
+
+`auto_setup = false` and `--no-setup` differ in one way:
+
+| | Skips setup before the session opens | Empties `{{.SetupCommand}}` |
+|---|---|---|
+| `auto_setup = false` | yes | no |
+| `--no-setup` | yes | yes |
+
+Neither one stops a window or pane that has the setup command written out in full. Use `--no-tmux` to skip the tmux session entirely.
+
+### Status hook
+
+A shell command that sarj runs for each worktree. Its trimmed output is the worktree's status. A non-zero exit, empty output, or timeout gives `unknown`.
+
+```toml
+[status]
+command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
+timeout = "10s"
+```
+
+The command reads these environment variables:
+
+| Variable | Value |
+|----------|-------|
+| `$BRANCH` | Worktree branch name |
+| `$SARJ_WT_PATH` | Worktree absolute path |
+
+When configured, `sarj list` adds a `STATUS` column and fills the JSON `status` field, and `sarj delete --state merged` filters by status. The match ignores case, so a hook returning `MERGED` matches `--state merged`. When unset, the column is hidden, JSON `status` is `null`, and `--state` errors.
+
+Combine with `jq` for other filters:
+
+```sh
+sarj list -o json | jq -r '.[] | select(.status=="merged") | .name' | xargs sarj delete -y
+```
 
 ## Shell completions
 
