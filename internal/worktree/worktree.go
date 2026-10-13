@@ -30,7 +30,6 @@ type Worktree struct {
 	Path   string
 	Branch string
 	HEAD   string
-	Bare   bool
 	Locked bool
 }
 

@@ -70,8 +70,6 @@ func parsePorcelain(output string) []Worktree {
 		case strings.HasPrefix(line, "branch "):
 			ref := strings.TrimPrefix(line, "branch ")
 			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
-		case line == "bare":
-			current.Bare = true
 		case line == "locked" || strings.HasPrefix(line, "locked "):
 			current.Locked = true
 		case line == "":
