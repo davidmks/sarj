@@ -2,11 +2,11 @@
 
 **/ˈʃɒrʲ/: Hungarian for shoot, sprout, new growth from a living tree. Also: offspring, descendant.**
 
-Git worktree + tmux session manager. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session. One command to tear it all down. tmux is optional.
+Git worktree + tmux session manager. One command to create an isolated worktree with symlinks, setup, and a pre-configured tmux session. One command to tear it all down.
 
 ## Install
 
-sarj needs **git**. **tmux** is optional: without it, sarj works as a pure worktree manager.
+sarj needs **git**. **tmux** is optional: without it, sarj only manages worktrees.
 
 ### Homebrew
 
@@ -43,7 +43,7 @@ sarj list
 # Rename branch, directory, and tmux session together
 sarj rename feat/my-feature feat/better-name
 
-# Delete a worktree (kills tmux session, removes worktree)
+# Delete a worktree and its tmux session
 sarj delete feat/my-feature
 
 # Delete and also remove the branch
@@ -76,7 +76,7 @@ Create a worktree with optional tmux session. With no name, sarj generates one.
 
 Remove one or more worktrees and kill their tmux sessions. With no name, deletes the worktree at the current directory.
 
-Delete returns right away, even for worktrees with large dependency folders. It moves each worktree into a `.sarj-trash` folder next to it, and a background process deletes the files afterwards. That folder is safe to delete by hand. Locked worktrees, and worktrees that can't be moved there, are removed in place by `git worktree remove`.
+Delete returns right away. It moves each worktree into a `.sarj-trash` folder next to it and deletes the files in the background. You can delete that folder by hand. Locked worktrees, and worktrees sarj can't move, go through `git worktree remove` instead.
 
 | Flag | Description |
 |------|-------------|
@@ -89,18 +89,18 @@ Delete returns right away, even for worktrees with large dependency folders. It 
 
 Rename a worktree's branch, directory, and tmux session in one step. With no name, renames the worktree at the current directory.
 
-The directory moves to a sibling of where it is now, so a worktree kept outside `worktree_base` stays put. If the move fails, sarj renames the branch back. Uncommitted changes survive the move, and your shell and tmux panes follow the directory.
+The directory is renamed inside its current parent folder, so a worktree kept outside `worktree_base` stays put. If the move fails, sarj renames the branch back. Uncommitted changes survive the move, and your shell and tmux panes follow the directory.
 
 | Flag | Description |
 |------|-------------|
 | `--keep-path` | Keep the worktree directory where it is |
 | `--no-tmux` | Skip renaming the tmux session |
 
-Git does not rename the remote branch, so a branch that already tracks one keeps tracking it under the old name. sarj warns when that happens.
+sarj does not rename the remote branch. If the branch tracks one, it keeps tracking the old name, and sarj warns you.
 
 ### `sarj list [-o text|json]`
 
-List worktrees with branch, ahead/behind, last-commit age, dirty flag, and tmux session status. The `STATUS` column appears when a [status hook](#status-hook) is configured. `-o json` prints JSON for piping into `jq`.
+List worktrees with branch, ahead/behind, last-commit age, uncommitted changes, and tmux session status. The `STATUS` column appears when a [status hook](#status-hook) is configured. `-o json` prints JSON for piping into `jq`.
 
 ### `sarj init [--global | --local]`
 
@@ -198,10 +198,10 @@ Window and pane commands can include placeholders. sarj fills them in when it cr
 
 | Placeholder | Source | Notes |
 |------|--------|-------|
-| `{{.Args}}` | The `--args` flag passed to `sarj create` | Shell-quoted to preserve word boundaries |
-| `{{.SetupCommand}}` | The `setup_command` config value | Inlined as a shell snippet (not quoted) |
+| `{{.Args}}` | The `--args` flag passed to `sarj create` | Shell-quoted, so arguments with spaces stay intact |
+| `{{.SetupCommand}}` | The `setup_command` config value | Inserted as-is, not quoted |
 
-This lets you keep the layout in your global config and let each project supply only its own `setup_command`. For example, a global 3-pane layout where the third pane runs the project's setup command:
+Use this to keep one layout in your global config while each project sets its own `setup_command`:
 
 ```toml
 # ~/.config/sarj/config.toml
@@ -217,7 +217,7 @@ command = "nvim"
 split = "horizontal"
 
 [[tmux.windows.panes]]
-command = "{{.SetupCommand}}"
+command = "{{.SetupCommand}}"  # runs the project's setup_command
 split = "vertical"
 size = 30
 ```
