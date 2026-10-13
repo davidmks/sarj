@@ -42,23 +42,6 @@ func MainWorktree(ctx context.Context, r CommandRunner) (string, error) {
 	return "", fmt.Errorf("no worktree found in output")
 }
 
-// DefaultBranch detects the default branch by checking the remote HEAD ref.
-// Falls back to "main" if detection fails.
-func DefaultBranch(ctx context.Context, r CommandRunner) string {
-	out, err := r.Run(ctx, "git", "symbolic-ref", "refs/remotes/origin/HEAD")
-	if err != nil {
-		return "main"
-	}
-
-	// Output is like "refs/remotes/origin/main"
-	parts := strings.Split(strings.TrimSpace(out), "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-
-	return "main"
-}
-
 // Fetch runs git fetch for the given remote.
 func Fetch(ctx context.Context, r CommandRunner, remote string) error {
 	_, err := r.Run(ctx, "git", "fetch", remote)

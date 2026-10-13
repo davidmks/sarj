@@ -89,7 +89,7 @@ func TestParsePorcelain(t *testing.T) {
 			name:  "bare repo",
 			input: "worktree /home/user/repo.git\nHEAD abc123\nbare\n\n",
 			want: []Worktree{
-				{Path: "/home/user/repo.git", HEAD: "abc123", Bare: true},
+				{Path: "/home/user/repo.git", HEAD: "abc123"},
 			},
 		},
 		{

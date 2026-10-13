@@ -105,39 +105,6 @@ func TestMainWorktree(t *testing.T) {
 	}
 }
 
-func TestDefaultBranch(t *testing.T) {
-	tests := []struct {
-		name string
-		out  string
-		err  error
-		want string
-	}{
-		{
-			name: "detects main",
-			out:  "refs/remotes/origin/main",
-			want: "main",
-		},
-		{
-			name: "detects trunk",
-			out:  "refs/remotes/origin/trunk",
-			want: "trunk",
-		},
-		{
-			name: "falls back on error",
-			err:  fmt.Errorf("no remote"),
-			want: "main",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := &fakeRunner{out: tt.out, err: tt.err}
-			got := git.DefaultBranch(t.Context(), r)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestFetch(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		r := &fakeRunner{}
