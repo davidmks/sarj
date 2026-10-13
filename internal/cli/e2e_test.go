@@ -93,7 +93,7 @@ func TestIntegration_DeleteFromInsideWorktree(t *testing.T) {
 		tmux.KillSession(context.Background(), r, "test-wt")
 	})
 
-	// Simulate running from inside the target worktree — the bug scenario
+	// Simulate running from inside the target worktree,
 	// where CWD is deleted out from under the process.
 	saveCwd(t)
 	require.NoError(t, os.Chdir(wtPath))

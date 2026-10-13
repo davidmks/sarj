@@ -12,8 +12,8 @@ func NewRootCmd(version string, r exec.Runner) *cobra.Command {
 		Use:     "sarj",
 		Short:   "Git worktree + tmux session manager",
 		Version: version,
-		// SilenceUsage prevents cobra from printing usage on every error —
-		// we only want usage on --help, not on runtime failures.
+		// SilenceUsage stops cobra from printing usage on every error. Usage
+		// belongs on --help, not on runtime failures.
 		SilenceUsage: true,
 	}
 

@@ -1,4 +1,4 @@
-// Package config handles loading and merging global and per-project TOML configuration.
+// Package config handles loading and merging the global, project, and local TOML configuration.
 package config
 
 import (
@@ -12,7 +12,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// Config holds the merged configuration from global and per-project sources.
+// Config holds the merged configuration from the global, project, and local files.
 type Config struct {
 	WorktreeBase  string `toml:"worktree_base"`
 	DefaultBranch string `toml:"default_branch"`
@@ -21,7 +21,7 @@ type Config struct {
 	Tmux   TmuxConfig   `toml:"tmux"`
 	Status StatusConfig `toml:"status"`
 
-	// Per-project only fields
+	// Usually set per project
 	SetupCommand string   `toml:"setup_command"`
 	AutoSetup    *bool    `toml:"auto_setup"`
 	Symlinks     []string `toml:"symlinks"`
@@ -29,7 +29,8 @@ type Config struct {
 
 // IsAutoSetup returns whether the setup command should run automatically
 // during sarj create. Defaults to true when not explicitly configured.
-// Set to false to skip setup by default (equivalent to passing --no-setup).
+// Set to false to skip the synchronous setup run. Unlike --no-setup, this
+// leaves the {{.SetupCommand}} placeholder filled in.
 func (c *Config) IsAutoSetup() bool {
 	if c.AutoSetup == nil {
 		return true
@@ -74,7 +75,7 @@ type PaneConfig struct {
 	Focus   bool   `toml:"focus"`
 }
 
-// Defaults returns a Config with sensible zero-config defaults.
+// Defaults returns the Config used when no config file sets a value.
 func Defaults(repoName string) Config {
 	return Config{
 		WorktreeBase:  "~/wt/" + repoName,
@@ -185,7 +186,8 @@ func loadFile(path string, dst any) error {
 }
 
 // merge overlays per-project fields onto the global config.
-// Per-project wins for: default_branch, setup_command, auto_setup, symlinks, tmux windows.
+// Per-project wins for: default_branch, setup_command, auto_setup, symlinks,
+// tmux windows, and the status hook.
 func merge(global, project *Config) {
 	if project.DefaultBranch != "" {
 		global.DefaultBranch = project.DefaultBranch
@@ -211,7 +213,7 @@ func merge(global, project *Config) {
 }
 
 // mergeLocal overlays local (per-user, per-project) fields onto the merged config.
-// Unlike merge, local can override any section including tmux.
+// It overrides the same fields as merge, plus worktree_base.
 func mergeLocal(base, local *Config) {
 	if local.WorktreeBase != "" {
 		base.WorktreeBase = local.WorktreeBase

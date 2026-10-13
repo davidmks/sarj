@@ -14,7 +14,9 @@ import (
 const globalConfigTemplate = `# sarj global configuration
 # See https://github.com/davidmks/sarj for documentation
 #
-# All values below show the built-in defaults. Uncomment and modify as needed.
+# The top-level values show the built-in defaults. The tmux windows are
+# examples; by default sarj opens one "terminal" window.
+# Uncomment and modify as needed.
 
 # Base directory for worktrees. {{.RepoName}} expands to the repo directory name.
 # worktree_base = "~/wt/{{.RepoName}}"
@@ -43,8 +45,8 @@ const globalConfigTemplate = `# sarj global configuration
 # env = { UV_ENV_FILE = ".env" }
 #
 # # Environment variables: use env_file to source a file (all variables are
-# # exported) or env to set individual variables. Both can be combined — the
-# # file is sourced first, then individual vars are exported. Panes inherit
+# # exported) or env to set individual variables. If you use both, sarj
+# # sources the file first, then exports the individual vars. Panes inherit
 # # environment from their parent window.
 #
 # # Windows can have panes for side-by-side layouts.
@@ -70,9 +72,9 @@ const projectConfigTemplate = `# sarj per-project configuration
 # Command to run after creating a worktree (e.g., install dependencies).
 # setup_command = "make setup"
 
-# Skip the setup command during sarj create by default — useful when
-# running setup yourself via a dedicated tmux window. Defaults to true
-# (run setup); the --no-setup flag still applies on top.
+# Set to false to skip the setup command during sarj create, for example
+# when a tmux window runs setup instead. Defaults to true. The --no-setup
+# flag still applies on top.
 # auto_setup = false
 
 # Files and directories to symlink from the main worktree into new ones.
@@ -88,22 +90,19 @@ const projectConfigTemplate = `# sarj per-project configuration
 # name = "dev"
 # command = "make dev"
 
-# Status hook: a forge-agnostic shell command, run per worktree, whose
-# trimmed stdout becomes the worktree's "status". The branch name and
-# worktree path are exposed as $BRANCH and $SARJ_WT_PATH. Non-zero exit,
-# empty output, or timeout (default 10s) all map to "unknown". When
-# configured, sarj list shows a STATUS column and JSON output, and
-# sarj delete --state filters by the returned token (case-insensitive).
-# 'gh pr list --state all' is preferred over 'gh pr view' so CLOSED PRs
-# are also detected; '.[0].state // "none"' yields a stable "none"
-# token when the branch has no PR.
+# Status hook: a shell command that sarj runs for each worktree. Its
+# trimmed output is the worktree's status. The command can read $BRANCH
+# and $SARJ_WT_PATH. A non-zero exit, empty output, or timeout (default
+# 10s) gives "unknown". sarj list shows the status, and
+# sarj delete --state filters by it, ignoring case.
+# This example prints the PR state, or "none" when the branch has no PR.
 # [status]
 # command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
 # timeout = "10s"
 `
 
 const localConfigTemplate = `# sarj local configuration (per-user, per-project)
-# DO NOT commit this file — add .sarj.local.toml to .gitignore.
+# DO NOT commit this file. Add .sarj.local.toml to .gitignore.
 # Sections defined here override the corresponding section from .sarj.toml.
 # See https://github.com/davidmks/sarj for documentation
 
@@ -113,19 +112,16 @@ const localConfigTemplate = `# sarj local configuration (per-user, per-project)
 # Override whether sarj create runs the setup command automatically.
 # auto_setup = false
 
-# Override symlinks — replaces the project symlinks entirely.
+# Override symlinks. Replaces the project symlinks entirely.
 # symlinks = [".env"]
 
-# Override tmux windows — replaces the global windows entirely.
-# [tmux]
-# enabled = true
-#
+# Override tmux windows. Replaces the project or global windows entirely.
 # [[tmux.windows]]
 # name = "server"
 # command = "make dev"
 
-# Override the project status hook (e.g., to use a different forge or
-# add private filtering). See .sarj.toml for the full description.
+# Override the project status hook, for example to use a different git
+# host. See .sarj.toml for the full description.
 # [status]
 # command = "gh pr list --state all --head \"$BRANCH\" --json state -q '.[0].state // \"none\"' 2>/dev/null"
 `

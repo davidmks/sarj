@@ -111,8 +111,8 @@ type deleteOpts struct {
 }
 
 // resolveDeleteTargets resolves the candidate worktrees and applies the
-// --state filter when set. Without --state it falls through to the existing
-// arg-or-cwd behavior. With --state and no args, the candidate pool is all
+// --state filter when set. Without --state it uses the named worktrees, or
+// the one at the current directory. With --state and no args, the candidate pool is all
 // non-main worktrees rather than the cwd.
 func resolveDeleteTargets(ctx context.Context, r exec.Runner, wts []worktree.Worktree, args, state []string) ([]target, error) {
 	wanted := stateSet(state)
@@ -200,9 +200,9 @@ func candidatePool(wts []worktree.Worktree, args []string) ([]target, error) {
 }
 
 // stateSet folds the --state values into a lowercased lookup set, trimming
-// whitespace and dropping empties. Lowercasing on both sides of the compare
-// makes matching forge-agnostic — `gh` returns OPEN/MERGED/CLOSED while
-// other tools return lower-case, and users tend to type lower-case.
+// whitespace and dropping empties. Lowercasing both sides makes the match
+// ignore case: `gh` returns OPEN/MERGED/CLOSED, while other tools and most
+// users use lowercase.
 func stateSet(values []string) map[string]bool {
 	out := make(map[string]bool, len(values))
 	for _, v := range values {
@@ -230,7 +230,8 @@ func loadDeleteConfig(ctx context.Context, r exec.Runner) (*config.Config, error
 }
 
 // deferCurrentSession moves any target matching the current tmux session to the
-// end of the queue so prior deletes complete before the SIGHUP-on-current-kill.
+// end of the queue. Killing the current session sends sarj SIGHUP, so the
+// other deletes must finish first.
 func deferCurrentSession(ctx context.Context, r exec.Runner, targets []target) []target {
 	if !tmux.IsInsideSession() {
 		return targets
@@ -274,7 +275,7 @@ func deleteOne(ctx context.Context, cmd *cobra.Command, r exec.Runner, t target,
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Deleted worktree %s (%s)\n", t.wt.Branch, branchStatus) //nolint:errcheck
 
-	// Session kill is last — it sends SIGHUP to the current process when run
+	// Session kill is last: it sends SIGHUP to the current process when run
 	// from inside the target session. With multi-arg, the current-session
 	// target was deferred to the end so prior deletes already finished.
 	sessionName := tmux.SanitizeName(t.name)

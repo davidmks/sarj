@@ -43,7 +43,7 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string
 // RunWithEnv folds env vars into the call key so tests can differentiate
 // invocations that share command text but vary by env. The recorded call
 // contains the env suffix; lookup tries the env-suffixed key first, then
-// progressively shorter prefixes — falling through to the plain command.
+// progressively shorter prefixes, falling through to the plain command.
 func (f *fakeRunner) RunWithEnv(_ context.Context, env []string, name string, args ...string) (string, error) {
 	call := name + " " + strings.Join(args, " ")
 	if len(env) > 0 {
