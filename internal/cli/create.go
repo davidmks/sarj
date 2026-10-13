@@ -82,7 +82,7 @@ func newCreateCmd(r exec.Runner) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.Base, "base", "b", "", "base branch (default: auto-detect)")
+	cmd.Flags().StringVarP(&opts.Base, "base", "b", "", "base branch (default: default_branch from config)")
 	cmd.Flags().BoolVar(&opts.SkipSetup, "no-setup", false, "skip setup command")
 	cmd.Flags().BoolVar(&opts.SkipSymlinks, "no-symlinks", false, "skip symlinking")
 	cmd.Flags().BoolVar(&skipTmux, "no-tmux", false, "skip tmux session creation")
