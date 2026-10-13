@@ -217,7 +217,7 @@ By default, `setup_command` runs synchronously before the tmux session opens, bl
 
 ```toml
 setup_command = "make setup"
-auto_setup = false  # equivalent to passing --no-setup every time
+auto_setup = false  # skip the synchronous setup run
 
 [[tmux.windows]]
 name = "setup"
@@ -289,7 +289,8 @@ Create a worktree with optional tmux session.
 
 | Flag | Description |
 |------|-------------|
-| `-b, --base <branch>` | Base branch (default: auto-detect) |
+| `-b, --base <branch>` | Base branch (default: `default_branch` from config) |
+| `--args <string>` | Value for the `{{.Args}}` placeholder in tmux commands |
 | `--no-setup` | Skip setup command |
 | `--no-symlinks` | Skip symlinking |
 | `--no-tmux` | Skip tmux session |
